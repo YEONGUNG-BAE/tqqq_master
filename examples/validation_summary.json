@@ -1,0 +1,68 @@
+[
+  {
+    "profile": "father_monthly",
+    "sessions": 43,
+    "resume_at": 10,
+    "repeat_unchanged": true,
+    "real_orders_sent": false,
+    "deposited_krw": "300000",
+    "final": {
+      "krw": "0",
+      "usd": "3.61051128571428571428571429",
+      "buying_power": "3.61051128571428571428571429",
+      "positions": {
+        "TQQQ": "3"
+      },
+      "sellable": {
+        "TQQQ": "3"
+      },
+      "external_open_orders": false,
+      "cash_usd": null
+    },
+    "actions": 8
+  },
+  {
+    "profile": "child_lump_sum",
+    "sessions": 43,
+    "resume_at": 10,
+    "repeat_unchanged": true,
+    "real_orders_sent": false,
+    "deposited_krw": "2000000",
+    "final": {
+      "krw": "0",
+      "usd": "15.829860571428571428571429",
+      "buying_power": "15.829860571428571428571429",
+      "positions": {
+        "TQQQ": "20"
+      },
+      "sellable": {
+        "TQQQ": "20"
+      },
+      "external_open_orders": false,
+      "cash_usd": null
+    },
+    "actions": 6
+  },
+  {
+    "profile": "self_irregular",
+    "sessions": 43,
+    "resume_at": 10,
+    "repeat_unchanged": true,
+    "real_orders_sent": false,
+    "deposited_krw": "2740000",
+    "final": {
+      "krw": "0",
+      "usd": "58.4080021428571428571428571",
+      "buying_power": "58.4080021428571428571428571",
+      "positions": {
+        "TQQQ": "27"
+      },
+      "sellable": {
+        "TQQQ": "27"
+      },
+      "external_open_orders": false,
+      "cash_usd": null
+    },
+    "actions": 11
+  }
+]

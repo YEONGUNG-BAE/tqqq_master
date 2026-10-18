@@ -1,0 +1,30 @@
+{
+  "state_dir": "state_observe",
+  "notifications": true,
+  "execution": {
+    "mode": "observe",
+    "krw_reserve": "0",
+    "usd_reserve": "0",
+    "min_fx_krw": "10000",
+    "max_fx_krw_per_day": "20000000",
+    "fee_buffer": "0.0015",
+    "limit_padding": "0.001",
+    "max_quote_spread": "0.003",
+    "max_fx_spread": "0.001",
+    "order_timeout_seconds": 120,
+    "max_orders_per_session": 20,
+    "migrate_symbols": [],
+    "reservation_lookup_start": null,
+    "unknown_outcome_lock_minutes": 360,
+    "inconsistency_lock_minutes": 120,
+    "max_consecutive_failures": 5,
+    "retry_base_seconds": 15,
+    "retry_max_seconds": 120
+  },
+  "verified": {
+    "split_only_data": false,
+    "usd_buying_power_and_fees": false,
+    "partial_fill_cancel": false,
+    "open_window_execution": false
+  }
+}

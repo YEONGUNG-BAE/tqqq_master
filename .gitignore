@@ -1,0 +1,46 @@
+# --- 파이썬·편집기 ---
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+*.tmp
+*.log
+
+# --- 비밀: 키·토큰·인증서 (예제 파일만 공개) ---
+secrets.env
+secrets*.env
+!secrets.example.env
+.env
+.env.*
+token.json
+token*.json
+token.lock
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+
+# --- 개인 설정: 실제 config는 공개하지 않음 (예제만 공개) ---
+config.json
+config*.json
+!config.example.json
+.claude/settings.local.json
+
+# --- 계좌 상태·실거래 기록·DB ---
+state*/
+paper_*/
+demo_output/
+logs/
+*.sqlite*
+*.db
+journal_unusable.json
+doctor/
+*.plist
+locks/
+
+# --- 재배포 여부를 확인하지 못한 외부 문서 (공식 링크에서 직접 받음, README 참고) ---
+vendor/meritz-portal-*.json
+vendor/meritz-openapi.json
+vendor/MERITZ_LICENSE.txt

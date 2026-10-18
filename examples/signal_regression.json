@@ -1,0 +1,9 @@
+{
+  "rows": 6942,
+  "first": "1999-03-10",
+  "last": "2026-10-13",
+  "mismatch_dates": [],
+  "reference": "tqqq_broker_execution/indep_core.py:dd_state",
+  "live_engine": "autotrader/signal.py:decisions",
+  "passed": true
+}

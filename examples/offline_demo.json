@@ -1,0 +1,69 @@
+{
+  "network_used": false,
+  "real_orders_sent": false,
+  "steps": [
+    {
+      "step": 1,
+      "result": "submitted: fx"
+    },
+    {
+      "step": 2,
+      "result": "submitted: order"
+    },
+    {
+      "step": 3,
+      "result": "confirmed: filled"
+    },
+    {
+      "step": 4,
+      "result": "idle: insufficient USD for one share"
+    },
+    {
+      "step": 5,
+      "result": "idle: insufficient USD for one share"
+    },
+    {
+      "step": 6,
+      "result": "idle: insufficient USD for one share"
+    },
+    {
+      "step": 7,
+      "result": "idle: insufficient USD for one share"
+    }
+  ],
+  "final": {
+    "krw": "0",
+    "usd": "58.811779857142857142857143",
+    "buying_power": "58.811779857142857142857143",
+    "positions": {
+      "TQQQ": "101"
+    },
+    "sellable": {
+      "TQQQ": "101"
+    },
+    "external_open_orders": false,
+    "cash_usd": null
+  },
+  "actions": [
+    {
+      "id": "5631eb99-f54d-4289-8347-25a692cb7a47",
+      "kind": "fx",
+      "status": "done",
+      "created": "2026-10-15T13:31:00+00:00",
+      "session": "2026-10-15",
+      "payload": "{\"krw\": \"10000000\", \"usd_before\": \"0\", \"rate\": \"1400\", \"quote_time\": \"2026-10-15T13:31:00+00:00\"}",
+      "receipt": "{\"number\": 1, \"usd_after\": \"7142.857142857142857142857143\"}",
+      "result": "{\"balance_confirmed\": true}"
+    },
+    {
+      "id": "8dd69e0c-4343-4861-831a-8e72177be062",
+      "kind": "order",
+      "status": "done",
+      "created": "2026-10-15T13:31:10+00:00",
+      "session": "2026-10-15",
+      "payload": "{\"symbol\": \"TQQQ\", \"side\": \"buy\", \"qty\": \"101\", \"price\": \"70.09\", \"held_before\": \"0\", \"target\": \"TQQQ\", \"signal_date\": \"2026-10-14\", \"quoted_at\": \"2026-10-15T13:31:10+00:00\"}",
+      "receipt": "{\"number\": 2, \"date\": \"20261015\"}",
+      "result": "{\"filled\": \"101\", \"state\": \"filled\", \"raw\": {\"symbol\": \"TQQQ\", \"side\": \"buy\", \"qty\": \"101\", \"price\": \"70.09\", \"filled\": \"101\", \"state\": \"filled\"}}"
+    }
+  ]
+}
