@@ -51,6 +51,11 @@ class NotSent(Stop):
     record, connection refused, DNS failure)."""
 
 
+class Aborted(Stop):
+    """The last check right before the request leaves (window, quote freshness)
+    failed after token issue/pacing delays. Nothing was sent; not a failure."""
+
+
 class Locked(Stop):
     """Hard lock that automatic recovery cannot clear; persisted until a person
     reconciles the account and runs `unlock`/`resolve`. Reads continue."""
@@ -417,7 +422,7 @@ class Engine:
 
     # ---- sending ----
 
-    def _submit(self, kind, payload, now, session, call):
+    def _submit(self, kind, payload, now, session, call, guard=None):
         if self.cfg.mode == "observe":
             self.j.event("plan", dict(kind=kind, **payload), now)
             return "observe: " + kind
@@ -430,6 +435,10 @@ class Engine:
                                target_version=f"{payload.get('signal_date')}:{target}" if target else None)
 
         def mark_sending():
+            # Runs after token issue and call pacing, immediately before the HTTP
+            # write: the last chance to drop a request whose window just closed.
+            if guard is not None:
+                guard()
             # Durable send-start immediately before the transport writes the request.
             try:
                 started = self.j.transition(action, PREPARED, SUBMITTING)
@@ -445,6 +454,9 @@ class Engine:
             hook(mark_sending)
         try:
             receipt = call()
+        except Aborted as exc:
+            self.j.update(action, NOT_SENT, result={"reason": "aborted before send: " + str(exc)})
+            return "idle: " + str(exc)
         except NotSent as exc:
             self.j.update(action, NOT_SENT, result={"reason": str(exc)})
             self._register_failure(now, "not sent: " + str(exc))
@@ -742,9 +754,17 @@ class Engine:
                 if self._past(fx_deadline, now):
                     return "idle: FX window closed during this run"
                 cash = snap.cash_usd if snap.cash_usd is not None else snap.usd
+
+                def fx_guard():
+                    if self._past(fx_deadline, now):
+                        raise Aborted("FX window closed before send")
+                    try:
+                        check_fx_quote(quote, self._current(now), self.cfg)
+                    except Stop as exc:
+                        raise Aborted("FX quote no longer valid at send time: " + str(exc)) from exc
                 return self._submit("fx", {"krw": str(krw), "usd_before": str(snap.usd), "cash_usd_before": str(cash),
                                            "rate": str(quote.ask), "quote_time": quote.server_time},
-                                    self._current(now), session, lambda: self.broker.exchange(krw, quote))
+                                    self._current(now), session, lambda: self.broker.exchange(krw, quote), fx_guard)
         if not may_trade:
             return note or "idle: outside execution window"
         wait = self._retry_wait(now)
@@ -786,8 +806,16 @@ class Engine:
                        held_before=str(snap.positions.get(symbol, D(0))), target=target,
                        signal_date=signal_date, quoted_at=quote.at.isoformat())
         sent_at = self._current(now)
+
+        def order_guard():
+            if self._past(trade_deadline, now):
+                raise Aborted("execution window closed before send")
+            try:
+                check_quote(quote, self._current(now), self.cfg)
+            except Stop as exc:
+                raise Aborted("quote no longer valid at send time: " + str(exc)) from exc
         return self._submit("order", payload, sent_at, session,
-                            lambda: self.broker.order(symbol, side, qty, price, sent_at))
+                            lambda: self.broker.order(symbol, side, qty, price, sent_at), order_guard)
 
 
 def _ref(receipt):

@@ -78,7 +78,7 @@ class FakeMeritz:
     def price(symbol):
         return {"TQQQ": "70.00", "QQQ": "600.00", "QQQM": "250.00", "BRK.B": "480.00"}.get(symbol, "10.00")
 
-    def __call__(self, method, path, query=None, body=None, *, token=None, form=False):
+    def __call__(self, method, path, query=None, body=None, *, token=None, form=False, paced=False):
         self.calls.append((method, path))
         if (method, path) == ("POST", "/oauth2/token"):
             return dict(access_token=TOKEN, expires_in="86400")

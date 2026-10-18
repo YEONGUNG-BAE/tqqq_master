@@ -62,8 +62,9 @@ class Schedule:
         return next((s for s in self.sessions if s[1] > now), None)
 
     def exchange_window(self, now):
-        # Conservative daytime window on Korean business days (XKRX calendar, so
-        # public holidays are excluded). Broker availability remains the final check.
+        # Conservative daytime window that also skips Korean exchange (XKRX) holidays.
+        # XKRX trading days are NOT confirmed to equal Meritz FX days: this only
+        # filters; the broker's reply remains the final word.
         local = now.astimezone(KST)
         minute = local.hour * 60 + local.minute
         return (local.weekday() < 5 and 9 * 60 <= minute < 15 * 60 + 20

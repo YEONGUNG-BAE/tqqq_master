@@ -570,7 +570,7 @@ class LiveFake(FakeMeritz):
             rsp_cd="5766" if self.ledger else "5820", tr_cont="0",
             data=[dict(r, oder_dqty=r["odqt"], cntg_dqty=r["cntg_qty"]) for r in self.ledger])
 
-    def __call__(self, method, path, query=None, body=None, *, token=None, form=False):
+    def __call__(self, method, path, query=None, body=None, *, token=None, form=False, paced=False):
         if (method, path) == ("POST", "/oauth2/token"):
             self.calls.append((method, path))
             return {"rsp_cd": "EGW00103"} if self.refuse_token else dict(access_token=TOKEN, expires_in="86400")
@@ -645,6 +645,63 @@ class AuthAndTokenTests(unittest.TestCase):
                 client.call("POST", "/trading/v1/overseas/orders/buy", body={})
         self.assertEqual(http.call_count, 1)
         self.assertFalse(client.token_file.exists())        # next run issues a fresh token
+
+
+class LastMomentSendCheckTests(AuthAndTokenTests):
+    """Review follow-up 4: delays after the last engine check (token issue, call
+    pacing) must not let a request out after its window or with a stale quote.
+    Runs through the real Client/Meritz path with a controllable clock."""
+
+    def run_engine(self, *, token_delay=0, pace_delay=0, deadline_after=1):
+        clock = {"t": US_OPEN}
+        fake = LiveFake(US_OPEN, datetime.now(KST).strftime("%Y%m%d"))
+        journal = Journal(self.state / "journal.sqlite")
+        self.addCleanup(journal.db.close)
+        with patch.object(Client, "_http", lambda _self, *a, **k: fake(*a, **k)):
+            client = Client(self.state, allow_mutations=True)
+            real_token = client.token
+
+            def token():
+                if client.on_send is not None:            # only inside the order POST
+                    clock["t"] += timedelta(seconds=token_delay)
+                    if pace_delay:
+                        client._next_call = __import__("time").monotonic() + 5
+                return real_token()
+
+            def sleep(seconds):
+                clock["t"] += timedelta(seconds=pace_delay)
+            client.token, client.sleep = token, sleep
+            engine = Engine(Meritz(client, journal), journal,
+                            Settings(mode="live", reservation_lookup_start="20260101"))
+            engine.clock = lambda: clock["t"]
+            deadline = US_OPEN + timedelta(seconds=deadline_after) if deadline_after is not None else None
+            result = engine.tick(**dict(SIGNAL, now=US_OPEN, may_trade=True), trade_deadline=deadline)
+        return result, fake, journal
+
+    def test_token_issue_delay_past_the_window_sends_no_order(self):
+        result, fake, journal = self.run_engine(token_delay=10, deadline_after=1)
+        self.assertEqual(result, "idle: execution window closed before send")
+        self.assertEqual(fake.posts, [])
+        self.assertEqual([r["status"] for r in journal.rows()], [NOT_SENT])
+        self.assertEqual(journal.meta("failures", {"count": 0})["count"], 0)   # not a broker failure
+
+    def test_pacing_wait_past_the_window_sends_no_order(self):
+        result, fake, journal = self.run_engine(pace_delay=10, deadline_after=1)
+        self.assertEqual(result, "idle: execution window closed before send")
+        self.assertEqual(fake.posts, [])
+
+    def test_quote_that_goes_stale_during_the_wait_sends_no_order(self):
+        result, fake, journal = self.run_engine(token_delay=40, deadline_after=None)
+        self.assertTrue(result.startswith("idle: quote no longer valid at send time"))
+        self.assertEqual(fake.posts, [])
+
+    def test_short_delay_inside_the_window_still_sends_once(self):
+        # LiveFake accepts the order and then loses the reply: the send happened once.
+        with self.assertRaises(UnknownOutcome):
+            self.run_engine(token_delay=2, deadline_after=60)
+        journal = Journal(self.state / "journal.sqlite")
+        self.addCleanup(journal.db.close)
+        self.assertEqual([r["status"] for r in journal.rows()], [UNKNOWN])
 
 
 class CliAuthLockTests(Harness):
@@ -917,6 +974,26 @@ class CliStateAndNotificationTests(Harness):
         finally:
             journal.db.close()
 
+    def test_failed_heartbeat_reaches_telegram_on_the_next_run(self):
+        root = self.setup_cli()
+        mac, telegram = [], []
+        state = {"up": False}
+        def tg(text):
+            telegram.append(text)
+            if not state["up"]:
+                raise OSError("telegram unreachable")
+        channels = {"macos": mac.append, "telegram": tg}
+        code, _, _ = self.run_cli(root, KRW_MORNING, channels)
+        self.assertEqual(code, 0)
+        heartbeat = [t for t in mac if t.startswith("[정상]")]
+        self.assertEqual(len(heartbeat), 1)
+        state["up"] = True
+        code, _, _ = self.run_cli(root, KRW_MORNING + timedelta(minutes=31), channels)
+        self.assertEqual(code, 0)
+        # Same day: the heartbeat is not raised again, yet Telegram now receives it.
+        self.assertEqual([t for t in mac if t.startswith("[정상]")], heartbeat)
+        self.assertEqual([t for t in telegram if t.startswith("[정상]")], heartbeat * 2)
+
     def test_unlock_refuses_while_a_request_is_unresolved(self):
         root = self.setup_cli(notifications=False)
         self.run_cli(root, KRW_MORNING, {})
@@ -986,7 +1063,7 @@ class TransportClassificationTests(unittest.TestCase):
             with self.assertRaises(RefusedUnconfirmed):
                 c.call("POST", "/forex/v1/exchanges", body={}, success=("0000",))
         self.assertEqual(http.call_count, 2)
-        self.assertEqual(self.slept, [])
+        self.assertTrue(all(s <= 0.3 for s in self.slept))   # call pacing only, no retry back-off
 
     def test_reply_without_response_code_is_unknown_not_refused(self):
         # Review finding 2: {} or a blank code says nothing about acceptance.
@@ -1044,9 +1121,12 @@ class TransportClassificationTests(unittest.TestCase):
         order = []
         c.token = lambda: order.append("token") or "t"
         c.on_send = lambda: order.append("send-start")
+        c.sleep = lambda seconds: order.append("pacing")
+        c._next_call = __import__("time").monotonic() + 5            # force a pacing wait
         with patch.object(c, "_http", side_effect=lambda *a, **k: order.append("http") or {"rsp_cd": "0001", "data": {}}):
             c.call("POST", "/trading/v1/overseas/orders/buy", body={}, success=("0001",))
-        self.assertEqual(order, ["token", "send-start", "http"])
+        # The last checks run after token issue AND pacing, right before the write.
+        self.assertEqual(order, ["token", "pacing", "send-start", "http"])
 
 
 class NotifierTests(unittest.TestCase):
@@ -1096,6 +1176,36 @@ class NotifierTests(unittest.TestCase):
         self.assertEqual((len(mac), len(telegram)), (2, 3))
         status = self.journal.meta("notified")["lock:x"]["channels"]
         self.assertEqual({k: v["ok"] for k, v in status.items()}, {"macos": True, "telegram": True})
+
+    def test_failed_one_time_message_is_resent_without_the_event_repeating(self):
+        # Review follow-up 5: a heartbeat/done/recovered message is sent once by the
+        # caller; a failed channel must still get it on a later run.
+        mac, telegram = [], []
+        state = {"up": False}
+        def tg(text):
+            telegram.append(text)
+            if not state["up"]:
+                raise OSError("telegram unreachable")
+        channels = {"macos": mac.append, "telegram": tg}
+        Notifier(self.journal, channels=channels).send("ok", "2026-10-15", "자동 운용 중입니다", NOW)
+        later = Notifier(self.journal, channels=channels)            # new run: the event is not raised again
+        self.assertEqual(later.retry_pending(NOW + timedelta(minutes=5)), 0)
+        self.assertEqual(later.retry_pending(NOW + timedelta(minutes=31)), 1)   # still down
+        state["up"] = True
+        self.assertEqual(later.retry_pending(NOW + timedelta(minutes=62)), 1)
+        self.assertEqual(later.retry_pending(NOW + timedelta(minutes=120)), 0)  # delivered: nothing pending
+        self.assertEqual(len(mac), 1)                                   # macOS never repeated
+        self.assertEqual(len(telegram), 3)
+        self.assertEqual(telegram[0], telegram[-1])                     # the same stored text
+        self.assertEqual(self.journal.meta("notify_pending"), {})
+
+    def test_failed_message_retries_stop_after_a_day(self):
+        def down(text):
+            raise OSError("down")
+        n = Notifier(self.journal, channels={"telegram": down})
+        n.send("done", "aligned:TQQQ", "목표 TQQQ 보유로 정렬을 마쳤습니다.", NOW)
+        n.retry_pending(NOW + timedelta(hours=25))
+        self.assertEqual(self.journal.meta("notify_pending"), {})
 
     def test_text_never_carries_secrets_numbers_or_amounts(self):
         with patch.dict(os.environ, {"TELEGRAM_BOT_TOKEN": "123456:SECRET-TOKEN", "MERITZ_CLIENT_SECRET": "very-secret"}):

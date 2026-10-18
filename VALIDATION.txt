@@ -1,4 +1,4 @@
-# 검증 출력 — 2026-10-18 11:57 KST, macOS Darwin 25.5.0
+# 검증 출력 — 2026-10-18 12:23 KST, macOS Darwin 25.5.0
 # Python 3.14.5 | exchange-calendars 4.12 | pandas 2.3.3 | NumPy 2.5.4
 # 명령: .venv/bin/python -m unittest discover -s tests -v
 # exchange-calendars의 NumPy DeprecationWarning은 알려진 경고이며 결과에 영향 없음
@@ -76,10 +76,11 @@ test_token_refusal_is_explicit_and_post_token_error_is_not_resent (test_fault_in
 test_repeated_token_refusal_locks_and_unlock_resumes (test_fault_injection.CliAuthLockTests.test_repeated_token_refusal_locks_and_unlock_resumes) ... ok
 test_overlapping_scheduler_or_second_state_folder_does_nothing (test_fault_injection.CliConcurrencyTests.test_overlapping_scheduler_or_second_state_folder_does_nothing) ... ok
 test_corrupt_state_database_blocks_every_request (test_fault_injection.CliStateAndNotificationTests.test_corrupt_state_database_blocks_every_request) ... ok
-test_daily_close_outage_still_reaches_the_engine (test_fault_injection.CliStateAndNotificationTests.test_daily_close_outage_still_reaches_the_engine) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10eccb970>
+test_daily_close_outage_still_reaches_the_engine (test_fault_injection.CliStateAndNotificationTests.test_daily_close_outage_still_reaches_the_engine) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10aa27f10>
   def __init__(self, name, parent):
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
+test_failed_heartbeat_reaches_telegram_on_the_next_run (test_fault_injection.CliStateAndNotificationTests.test_failed_heartbeat_reaches_telegram_on_the_next_run) ... ok
 test_hold_then_automatic_recovery_is_notified_once_each (test_fault_injection.CliStateAndNotificationTests.test_hold_then_automatic_recovery_is_notified_once_each) ... ok
 test_notification_failure_changes_nothing (test_fault_injection.CliStateAndNotificationTests.test_notification_failure_changes_nothing) ... ok
 test_unlock_refuses_while_a_request_is_unresolved (test_fault_injection.CliStateAndNotificationTests.test_unlock_refuses_while_a_request_is_unresolved) ... ok
@@ -99,10 +100,18 @@ test_undocumented_fx_error_without_any_record_locks_instead_of_retrying (test_fa
 test_lock_prevents_own_order_cancel (test_fault_injection.GateOrderingTests.test_lock_prevents_own_order_cancel) ... ok
 test_lock_still_reconciles_own_order_but_sends_nothing (test_fault_injection.GateOrderingTests.test_lock_still_reconciles_own_order_but_sends_nothing) ... ok
 test_untracked_order_blocks_new_requests_but_not_own_status_checks (test_fault_injection.GateOrderingTests.test_untracked_order_blocks_new_requests_but_not_own_status_checks) ... ok
+test_lost_order_reply_then_token_expiry_recovers_without_resend (test_fault_injection.LastMomentSendCheckTests.test_lost_order_reply_then_token_expiry_recovers_without_resend) ... ok
+test_pacing_wait_past_the_window_sends_no_order (test_fault_injection.LastMomentSendCheckTests.test_pacing_wait_past_the_window_sends_no_order) ... ok
+test_quote_that_goes_stale_during_the_wait_sends_no_order (test_fault_injection.LastMomentSendCheckTests.test_quote_that_goes_stale_during_the_wait_sends_no_order) ... ok
+test_short_delay_inside_the_window_still_sends_once (test_fault_injection.LastMomentSendCheckTests.test_short_delay_inside_the_window_still_sends_once) ... ok
+test_token_issue_delay_past_the_window_sends_no_order (test_fault_injection.LastMomentSendCheckTests.test_token_issue_delay_past_the_window_sends_no_order) ... ok
+test_token_refusal_is_explicit_and_post_token_error_is_not_resent (test_fault_injection.LastMomentSendCheckTests.test_token_refusal_is_explicit_and_post_token_error_is_not_resent) ... ok
 test_empty_then_failed_lookup_hold_then_recover (test_fault_injection.LedgerLookupTests.test_empty_then_failed_lookup_hold_then_recover) ... ok
 test_several_candidates_lock_and_attribute_none (test_fault_injection.LedgerLookupTests.test_several_candidates_lock_and_attribute_none) ... ok
 test_failed_channel_is_retried_even_when_another_channel_succeeded (test_fault_injection.NotifierTests.test_failed_channel_is_retried_even_when_another_channel_succeeded) ... ok
 test_failed_delivery_is_recorded_and_retried_later_not_immediately (test_fault_injection.NotifierTests.test_failed_delivery_is_recorded_and_retried_later_not_immediately) ... ok
+test_failed_message_retries_stop_after_a_day (test_fault_injection.NotifierTests.test_failed_message_retries_stop_after_a_day) ... ok
+test_failed_one_time_message_is_resent_without_the_event_repeating (test_fault_injection.NotifierTests.test_failed_one_time_message_is_resent_without_the_event_repeating) ... ok
 test_repeat_suppression_survives_restart (test_fault_injection.NotifierTests.test_repeat_suppression_survives_restart) ... ok
 test_telegram_puts_token_only_in_the_request_url (test_fault_injection.NotifierTests.test_telegram_puts_token_only_in_the_request_url) ... ok
 test_text_never_carries_secrets_numbers_or_amounts (test_fault_injection.NotifierTests.test_text_never_carries_secrets_numbers_or_amounts) ... ok
@@ -201,6 +210,6 @@ test_fx_uses_customer_applied_buy_rate_and_no_duplicate_fee (test_schema_contrac
 test_order_buy_sell_and_cancel_request_fields_match_official_schema (test_schema_contract.OfficialSchemaTests.test_order_buy_sell_and_cancel_request_fields_match_official_schema) ... ok
 
 ----------------------------------------------------------------------
-Ran 184 tests in 7.380s
+Ran 193 tests in 7.566s
 
 OK

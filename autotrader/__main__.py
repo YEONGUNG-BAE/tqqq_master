@@ -155,6 +155,7 @@ def run_locked(cfg, state, settings):
     except JournalError as exc:
         return journal_unusable(marker, cfg, now, str(exc))
     notifier = Notifier(journal, enabled=cfg.get("notifications", True))
+    notifier.retry_pending(now)   # failed one-time messages are not lost if the event never repeats
     try:
         client = Client(state, allow_mutations=settings.mode == "live")
         broker = Meritz(client, journal)

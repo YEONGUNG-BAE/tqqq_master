@@ -160,7 +160,7 @@ def market_section(broker, schedule, now):
               "engine_windows": {"new_order_window_now": schedule.execution_window(now),
                                  "new_order_window_rule": "정규장 개장 후 1~15분",
                                  "krw_fx_window_now": schedule.exchange_window(now),
-                                 "krw_fx_window_rule": "한국거래소 영업일 09:00~15:20 (공휴일 제외, XKRX 달력)"}}
+                                 "krw_fx_window_rule": "평일 09:00~15:20 중 한국거래소(XKRX) 휴장일 제외 (보수적 필터, 메리츠 환전 가능일과 같다고 미확인)"}}
     if broker is None:
         report["broker_market"] = {"status": "not_available"}
         check = regular_session_check(session, None, now, "no broker credentials")

@@ -75,12 +75,16 @@ class Client:
         self.rng = random.Random()
         self.token_issued = False
 
-    def _http(self, method, path, query=None, body=None, *, token=None, form=False):
+    def _pace(self):
         # Conservative call pacing; no busy looping and no speculative mutation retries.
         delay = self._next_call - time.monotonic()
         if delay > 0:
             self.sleep(delay)
         self._next_call = time.monotonic() + 0.3
+
+    def _http(self, method, path, query=None, body=None, *, token=None, form=False, paced=False):
+        if not paced:
+            self._pace()
         url = BASE + path + ("?" + urlencode(query) if query else "")
         headers = {"mac_address": self.mac, "Accept": "application/json"}
         if token:
@@ -173,9 +177,10 @@ class Client:
             response = self._read(path, query)
         else:
             token = self.token()          # a failure here is before any send-start record
+            self._pace()                  # wait BEFORE the last checks, never after them
             if self.on_send is not None:
-                self.on_send()            # durable send-start; raises NotSent if it cannot be saved
-            response = self._http(method, path, query, body, token=token)
+                self.on_send()            # final window/quote checks + durable send-start
+            response = self._http(method, path, query, body, token=token, paced=True)
         if str(response.get("rsp_cd")) not in success:
             raw_code = response.get("rsp_cd")
             code = str(raw_code).strip() if raw_code is not None else ""

@@ -23,6 +23,7 @@ from urllib.request import Request, urlopen
 WINDOWS = {"hold": timedelta(hours=6), "lock": timedelta(hours=6), "carryover": timedelta(days=7),
            "recovered": timedelta(minutes=30), "done": timedelta(hours=12), "ok": timedelta(hours=20)}
 RETRY_AFTER_FAILURE = timedelta(minutes=30)
+RETRY_GIVE_UP = timedelta(hours=24)     # a failed message is retried for at most a day
 TITLES = {"ok": "정상", "done": "완료", "hold": "보류", "recovered": "복구", "lock": "잠금", "carryover": "이월"}
 FOOTERS = {"hold": "조건이 해소되면 자동으로 재개합니다.",
            "carryover": "다음 실행창에서 최신 신호와 잔고로 다시 계산합니다.",
@@ -140,9 +141,77 @@ class Notifier:
                 failed.append({"channel": name, "error_type": type(exc).__name__})
                 status[name] = {"at": now.isoformat(), "ok": False}
         sent[key] = {"at": now.isoformat(), "channels": status}
+        self._remember_failures(key, category, text, delivered, failed, now)
         cutoff = now - timedelta(days=8)
         sent = {k: v for k, v in sent.items() if datetime.fromisoformat(v["at"]) >= cutoff}
         self.j.put_meta("notified", sent)
         self.j.event("notification", {"category": category, "code": code, "text": text,
                                       "delivered": delivered, "failed": failed}, now)
         return True
+
+    def _remember_failures(self, key, category, text, delivered, failed, now):
+        """Persist the exact text for channels that failed, so the next run can
+        retry them even if the caller never raises the same event again."""
+        pending = self.j.meta("notify_pending", {})
+        entry = pending.get(key) or {"category": category, "text": text, "channels": [],
+                                     "first": now.isoformat(), "attempts": 0}
+        entry["channels"] = sorted((set(entry["channels"]) - set(delivered)) | {f["channel"] for f in failed})
+        if failed:
+            entry.update(text=text, attempts=entry["attempts"] + 1,
+                         retry_at=(now + RETRY_AFTER_FAILURE).isoformat())
+        if entry["channels"]:
+            pending[key] = entry
+        else:
+            pending.pop(key, None)
+        self.j.put_meta("notify_pending", pending)
+
+    def retry_pending(self, now):
+        """Called at the start of every run. Re-sends stored texts to channels whose
+        retry time has passed. Never raises; gives up after RETRY_GIVE_UP."""
+        try:
+            pending = self.j.meta("notify_pending", {})
+            if not pending or not self.enabled:
+                return 0
+            channels = default_channels() if self.channels is None else self.channels
+            sent = self.j.meta("notified", {})
+            attempted = 0
+            for key, entry in list(pending.items()):
+                if now - datetime.fromisoformat(entry["first"]) >= RETRY_GIVE_UP:
+                    self.j.event("notification_dropped", {"key": key, "channels": entry["channels"]}, now)
+                    pending.pop(key)
+                    continue
+                if now < datetime.fromisoformat(entry["retry_at"]):
+                    continue
+                delivered, failed = [], []
+                for name in entry["channels"]:
+                    channel = channels.get(name)
+                    if channel is None:          # channel no longer configured
+                        delivered.append(name)
+                        continue
+                    attempted += 1
+                    try:
+                        channel(entry["text"])
+                        delivered.append(name)
+                    except Exception as exc:
+                        failed.append({"channel": name, "error_type": type(exc).__name__})
+                record = sent.setdefault(key, {"at": now.isoformat(), "channels": {}})
+                record.setdefault("channels", {})
+                for name in delivered:
+                    record["channels"][name] = {"at": now.isoformat(), "ok": True}
+                for f in failed:
+                    record["channels"][f["channel"]] = {"at": now.isoformat(), "ok": False}
+                entry["channels"] = [f["channel"] for f in failed]
+                entry["attempts"] += 1
+                entry["retry_at"] = (now + RETRY_AFTER_FAILURE).isoformat()
+                if not entry["channels"]:
+                    pending.pop(key)
+                self.j.event("notification_retry", {"key": key, "delivered": delivered, "failed": failed}, now)
+            self.j.put_meta("notified", sent)
+            self.j.put_meta("notify_pending", pending)
+            return attempted
+        except Exception as exc:
+            try:
+                self.j.event("notification_failed", {"stage": "retry", "error_type": type(exc).__name__}, now)
+            except Exception:
+                pass
+            return 0
