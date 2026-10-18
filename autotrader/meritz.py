@@ -36,6 +36,11 @@ RESERVATION_FIELDS = ("rsev_acpt_date", "seln_byov_clcd", "odqt", "rsev_cncl_yn"
 ORDER_PATHS = ("/trading/v1/overseas/orders/buy", "/trading/v1/overseas/orders/sell",
                "/trading/v1/overseas/orders/cancel")
 TOKEN_INVALID = {"EGW00121", "EGW00123"}   # EGW00121 documented as expired/invalid token
+# FX error codes the spec documents as rejected before any processing: input
+# validation (7668), gateway length check (IGW50004), gateway token rejection
+# (EGW00121) and gateway rate limit (EGW00200, "retry shortly"). Any other FX
+# error reply leaves the outcome unknown; it is never presumed unexecuted.
+FX_NOT_PROCESSED = {"7668", "IGW50004", "EGW00121", "EGW00200"}
 RATE_LIMITED = "EGW00200"                  # documented: not a failure, retry shortly
 READ_ATTEMPTS = 3                          # first try + 2 retries per read
 READ_BACKOFF_SECONDS = 0.5                 # 0.5s, 1s (x jitter 1.0-1.25)
@@ -172,16 +177,22 @@ class Client:
                 self.on_send()            # durable send-start; raises NotSent if it cannot be saved
             response = self._http(method, path, query, body, token=token)
         if str(response.get("rsp_cd")) not in success:
-            code = str(response.get("rsp_cd", "missing"))
+            raw_code = response.get("rsp_cd")
+            code = str(raw_code).strip() if raw_code is not None else ""
             if method != "GET":
+                if not code:
+                    # No response code at all: the reply is incomplete, so whether the
+                    # broker accepted the request is unknown. Never a refusal.
+                    raise UnknownOutcome("Mutating request answered without a response code")
                 if code in TOKEN_INVALID:
                     self.token_file.unlink(missing_ok=True)   # next run issues a new token
                 if path in ORDER_PATHS:
+                    # Documented: any order/cancel code other than 0001 = not accepted.
                     raise Refused("Order request not accepted by broker (code " + code + ")", code)
-                # FX: a non-success reply is not documented as "not processed";
-                # settle it against the FX history before treating it as refused.
+                if code in FX_NOT_PROCESSED:
+                    raise Refused("FX request rejected before processing (code " + code + ")", code)
                 raise RefusedUnconfirmed("Mutation returned non-success API code " + code, code)
-            raise Stop("API read failed: " + code)
+            raise Stop("API read failed: " + (code or "missing"))
         if not allow_paginated and str(response.get("tr_cont", "0")) not in {"0", "", "None"}:
             raise Stop("Incomplete paginated response; no trading on a partial snapshot")
         return response

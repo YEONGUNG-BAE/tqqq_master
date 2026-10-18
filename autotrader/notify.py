@@ -104,10 +104,24 @@ class Notifier:
             return False
 
     def _send(self, category, code, message, now, required):
+        """Per-channel bookkeeping: a channel that delivered is quiet for the
+        category window; a channel that failed is retried after 30 minutes, even
+        when another channel succeeded."""
         key = f"{category}:{code}"
         sent = self.j.meta("notified", {})
-        last = sent.get(key)
-        if last and now - datetime.fromisoformat(last["at"]) < (WINDOWS[category] if last.get("ok") else RETRY_AFTER_FAILURE):
+        record = sent.get(key) or {}
+        if "channels" not in record and record.get("at"):
+            record = {"channels": {}, "legacy": record}   # older single-status records
+        channels = (default_channels() if self.channels is None else self.channels) if self.enabled else {}
+        due = {}
+        for name, channel in channels.items():
+            last = record["channels"].get(name) if record else None
+            if last is None and record.get("legacy"):
+                last = record["legacy"]
+            if last and now - datetime.fromisoformat(last["at"]) < (WINDOWS[category] if last.get("ok") else RETRY_AFTER_FAILURE):
+                continue
+            due[name] = channel
+        if not due and (self.enabled or record):
             return False
         lines = [f"[{TITLES[category]}] {message}"]
         if required:
@@ -116,16 +130,16 @@ class Notifier:
             lines.append(FOOTERS[category])
         text = scrub("\n".join(lines), secret_values())
         delivered, failed = [], []
-        if self.enabled:
-            channels = default_channels() if self.channels is None else self.channels
-            for name, channel in channels.items():
-                try:
-                    channel(text)
-                    delivered.append(name)
-                except Exception as exc:   # delivery problems never touch trading state
-                    failed.append({"channel": name, "error_type": type(exc).__name__})
-        ok = bool(delivered) or not self.enabled
-        sent[key] = {"at": now.isoformat(), "ok": ok}
+        status = dict(record.get("channels", {})) if record else {}
+        for name, channel in due.items():
+            try:
+                channel(text)
+                delivered.append(name)
+                status[name] = {"at": now.isoformat(), "ok": True}
+            except Exception as exc:   # delivery problems never touch trading state
+                failed.append({"channel": name, "error_type": type(exc).__name__})
+                status[name] = {"at": now.isoformat(), "ok": False}
+        sent[key] = {"at": now.isoformat(), "channels": status}
         cutoff = now - timedelta(days=8)
         sent = {k: v for k, v in sent.items() if datetime.fromisoformat(v["at"]) >= cutoff}
         self.j.put_meta("notified", sent)

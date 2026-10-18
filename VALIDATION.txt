@@ -1,4 +1,4 @@
-# 검증 출력 — 2026-10-18 11:33 KST, macOS Darwin 25.5.0
+# 검증 출력 — 2026-10-18 11:57 KST, macOS Darwin 25.5.0
 # Python 3.14.5 | exchange-calendars 4.12 | pandas 2.3.3 | NumPy 2.5.4
 # 명령: .venv/bin/python -m unittest discover -s tests -v
 # exchange-calendars의 NumPy DeprecationWarning은 알려진 경고이며 결과에 영향 없음
@@ -11,6 +11,8 @@ test_partial_cancel_does_not_finish_original_order (test_automation.AdapterTests
 test_successful_post_is_not_retried_on_expired_token (test_automation.AdapterTests.test_successful_post_is_not_retried_on_expired_token) ... ok
 <project>/.venv/lib/python3.14/site-packages/exchange_calendars/exchange_calendar.py:65: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
   ONE_HOUR = pd.Timedelta("1h")
+<project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
 <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
   delta = pd.Timedelta(
 <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
@@ -74,10 +76,11 @@ test_token_refusal_is_explicit_and_post_token_error_is_not_resent (test_fault_in
 test_repeated_token_refusal_locks_and_unlock_resumes (test_fault_injection.CliAuthLockTests.test_repeated_token_refusal_locks_and_unlock_resumes) ... ok
 test_overlapping_scheduler_or_second_state_folder_does_nothing (test_fault_injection.CliConcurrencyTests.test_overlapping_scheduler_or_second_state_folder_does_nothing) ... ok
 test_corrupt_state_database_blocks_every_request (test_fault_injection.CliStateAndNotificationTests.test_corrupt_state_database_blocks_every_request) ... ok
-test_hold_then_automatic_recovery_is_notified_once_each (test_fault_injection.CliStateAndNotificationTests.test_hold_then_automatic_recovery_is_notified_once_each) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109df2e30>
+test_daily_close_outage_still_reaches_the_engine (test_fault_injection.CliStateAndNotificationTests.test_daily_close_outage_still_reaches_the_engine) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10eccb970>
   def __init__(self, name, parent):
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
+test_hold_then_automatic_recovery_is_notified_once_each (test_fault_injection.CliStateAndNotificationTests.test_hold_then_automatic_recovery_is_notified_once_each) ... ok
 test_notification_failure_changes_nothing (test_fault_injection.CliStateAndNotificationTests.test_notification_failure_changes_nothing) ... ok
 test_unlock_refuses_while_a_request_is_unresolved (test_fault_injection.CliStateAndNotificationTests.test_unlock_refuses_while_a_request_is_unresolved) ... ok
 test_database_admits_one_request_in_flight (test_fault_injection.ConcurrencyTests.test_database_admits_one_request_in_flight) ... ok
@@ -89,13 +92,16 @@ test_crash_before_intent_saved_sends_nothing (test_fault_injection.CrashPointTes
 test_intent_saved_but_send_never_started_is_abandoned_then_redone_once (test_fault_injection.CrashPointTests.test_intent_saved_but_send_never_started_is_abandoned_then_redone_once) ... ok
 test_send_started_without_broker_record_is_never_resent (test_fault_injection.CrashPointTests.test_send_started_without_broker_record_is_never_resent) ... ok
 test_duplicate_and_out_of_order_reports_never_double_count (test_fault_injection.FillReportOrderingTests.test_duplicate_and_out_of_order_reports_never_double_count) ... ok
-test_explicit_fx_refusal_confirmed_by_history_then_retried_once (test_fault_injection.FxRecoveryTests.test_explicit_fx_refusal_confirmed_by_history_then_retried_once) ... ok
+test_documented_not_processed_fx_code_is_retried_after_backoff (test_fault_injection.FxRecoveryTests.test_documented_not_processed_fx_code_is_retried_after_backoff) ... ok
 test_lost_fx_response_with_reflection_lag_never_exchanges_twice (test_fault_injection.FxRecoveryTests.test_lost_fx_response_with_reflection_lag_never_exchanges_twice) ... ok
+test_undocumented_fx_error_with_lagging_history_never_exchanges_twice (test_fault_injection.FxRecoveryTests.test_undocumented_fx_error_with_lagging_history_never_exchanges_twice) ... ok
+test_undocumented_fx_error_without_any_record_locks_instead_of_retrying (test_fault_injection.FxRecoveryTests.test_undocumented_fx_error_without_any_record_locks_instead_of_retrying) ... ok
 test_lock_prevents_own_order_cancel (test_fault_injection.GateOrderingTests.test_lock_prevents_own_order_cancel) ... ok
 test_lock_still_reconciles_own_order_but_sends_nothing (test_fault_injection.GateOrderingTests.test_lock_still_reconciles_own_order_but_sends_nothing) ... ok
 test_untracked_order_blocks_new_requests_but_not_own_status_checks (test_fault_injection.GateOrderingTests.test_untracked_order_blocks_new_requests_but_not_own_status_checks) ... ok
 test_empty_then_failed_lookup_hold_then_recover (test_fault_injection.LedgerLookupTests.test_empty_then_failed_lookup_hold_then_recover) ... ok
 test_several_candidates_lock_and_attribute_none (test_fault_injection.LedgerLookupTests.test_several_candidates_lock_and_attribute_none) ... ok
+test_failed_channel_is_retried_even_when_another_channel_succeeded (test_fault_injection.NotifierTests.test_failed_channel_is_retried_even_when_another_channel_succeeded) ... ok
 test_failed_delivery_is_recorded_and_retried_later_not_immediately (test_fault_injection.NotifierTests.test_failed_delivery_is_recorded_and_retried_later_not_immediately) ... ok
 test_repeat_suppression_survives_restart (test_fault_injection.NotifierTests.test_repeat_suppression_survives_restart) ... ok
 test_telegram_puts_token_only_in_the_request_url (test_fault_injection.NotifierTests.test_telegram_puts_token_only_in_the_request_url) ... ok
@@ -107,12 +113,21 @@ test_target_change_during_carryover_avoids_round_trip (test_fault_injection.Proc
 test_acceptance_resets_the_failure_count (test_fault_injection.RetryAndLockTests.test_acceptance_resets_the_failure_count) ... ok
 test_refusals_back_off_then_lock_and_survive_restart (test_fault_injection.RetryAndLockTests.test_refusals_back_off_then_lock_and_survive_restart) ... ok
 test_temporary_hold_clears_by_itself (test_fault_injection.RetryAndLockTests.test_temporary_hold_clears_by_itself) ... ok
+test_refresh_error_still_cancels_own_timed_out_order (test_fault_injection.SignalOutageTests.test_refresh_error_still_cancels_own_timed_out_order) ... ok
+test_stale_signal_still_settles_own_order_but_sends_nothing_new (test_fault_injection.SignalOutageTests.test_stale_signal_still_settles_own_order_but_sends_nothing_new) ... ok
+test_clock_behind_the_tick_start_cannot_reopen_a_window (test_fault_injection.SlowRunClockTests.test_clock_behind_the_tick_start_cannot_reopen_a_window) ... ok
+test_fx_window_that_closed_during_the_run_sends_nothing (test_fault_injection.SlowRunClockTests.test_fx_window_that_closed_during_the_run_sends_nothing) ... ok
+test_quote_received_after_slow_reads_is_not_rejected_as_future (test_fault_injection.SlowRunClockTests.test_quote_received_after_slow_reads_is_not_rejected_as_future) ... ok
+test_window_that_closed_during_the_run_sends_nothing (test_fault_injection.SlowRunClockTests.test_window_that_closed_during_the_run_sends_nothing) ... ok
 test_send_start_write_failure_sends_nothing (test_fault_injection.StateFailureTests.test_send_start_write_failure_sends_nothing) ... ok
 test_stale_quote_and_unconfirmed_market_send_nothing (test_fault_injection.StateFailureTests.test_stale_quote_and_unconfirmed_market_send_nothing) ... ok
 test_target_reached_then_reruns_and_restarts_send_nothing (test_fault_injection.SteadyStateTests.test_target_reached_then_reruns_and_restarts_send_nothing) ... ok
+test_missing_code_on_order_becomes_unknown_in_the_engine_and_is_not_resent (test_fault_injection.TransportClassificationTests.test_missing_code_on_order_becomes_unknown_in_the_engine_and_is_not_resent) ... ok
 test_mutations_are_never_retried_and_are_classified (test_fault_injection.TransportClassificationTests.test_mutations_are_never_retried_and_are_classified) ... ok
+test_only_documented_fx_codes_count_as_not_processed (test_fault_injection.TransportClassificationTests.test_only_documented_fx_codes_count_as_not_processed) ... ok
 test_only_refused_connections_count_as_not_sent (test_fault_injection.TransportClassificationTests.test_only_refused_connections_count_as_not_sent) ... ok
 test_reads_retry_with_growing_jittered_backoff (test_fault_injection.TransportClassificationTests.test_reads_retry_with_growing_jittered_backoff) ... ok
+test_reply_without_response_code_is_unknown_not_refused (test_fault_injection.TransportClassificationTests.test_reply_without_response_code_is_unknown_not_refused) ... ok
 test_send_start_hook_runs_after_token_and_before_transport (test_fault_injection.TransportClassificationTests.test_send_start_hook_runs_after_token_and_before_transport) ... ok
 test_active_reservation_blocks_order_and_is_not_cancelled (test_market_reservations.EngineReservationGateTests.test_active_reservation_blocks_order_and_is_not_cancelled) ... ok
 test_broker_without_lookup_fails_closed (test_market_reservations.EngineReservationGateTests.test_broker_without_lookup_fails_closed) ... ok
@@ -186,6 +201,6 @@ test_fx_uses_customer_applied_buy_rate_and_no_duplicate_fee (test_schema_contrac
 test_order_buy_sell_and_cancel_request_fields_match_official_schema (test_schema_contract.OfficialSchemaTests.test_order_buy_sell_and_cancel_request_fields_match_official_schema) ... ok
 
 ----------------------------------------------------------------------
-Ran 171 tests in 6.428s
+Ran 184 tests in 7.380s
 
 OK

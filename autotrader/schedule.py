@@ -17,6 +17,12 @@ class Schedule:
         calendar = xc.get_calendar("XNYS", start=f"{year-2}-01-01", end=f"{year+1}-12-31")
         self.sessions = [(index.date().isoformat(), row["open"].to_pydatetime(), row["close"].to_pydatetime())
                          for index, row in calendar.schedule.iterrows()]
+        # Korean business days for the KRW->USD window. Unreadable -> no FX at all.
+        try:
+            krx = xc.get_calendar("XKRX", start=f"{year-1}-01-01", end=f"{year+1}-12-31")
+            self.korean_days = {d.date().isoformat() for d in krx.sessions}
+        except Exception:
+            self.korean_days = set()
 
     def expected_close(self, now):
         completed = [s for s in self.sessions if s[2] + timedelta(minutes=5) <= now]
@@ -37,6 +43,16 @@ class Schedule:
         session = self.trading_session(now)
         return bool(session and session[1] + timedelta(minutes=1) <= now < session[1] + timedelta(minutes=15))
 
+    def execution_deadline(self, now):
+        """End of the new-order window for the session containing `now`, else None."""
+        session = self.trading_session(now)
+        return session[1] + timedelta(minutes=15) if session else None
+
+    @staticmethod
+    def exchange_deadline(now):
+        local = now.astimezone(KST)
+        return local.replace(hour=15, minute=20, second=0, microsecond=0)
+
     def session_key(self, now):
         """Journal session label: US session date, else the Korean FX day."""
         session = self.trading_session(now)
@@ -45,13 +61,13 @@ class Schedule:
     def next_session(self, now):
         return next((s for s in self.sessions if s[1] > now), None)
 
-    @staticmethod
-    def exchange_window(now):
-        # Conservative daytime window. Actual broker availability remains the final
-        # check; Korean holidays are not inferred from US exchange calendars.
+    def exchange_window(self, now):
+        # Conservative daytime window on Korean business days (XKRX calendar, so
+        # public holidays are excluded). Broker availability remains the final check.
         local = now.astimezone(KST)
         minute = local.hour * 60 + local.minute
-        return local.weekday() < 5 and 9 * 60 <= minute < 15 * 60 + 20
+        return (local.weekday() < 5 and 9 * 60 <= minute < 15 * 60 + 20
+                and local.date().isoformat() in self.korean_days)
 
 
 # ---- US regular-session confirmation: calendar + broker segment + clock ----

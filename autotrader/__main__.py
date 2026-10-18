@@ -164,10 +164,16 @@ def run_locked(cfg, state, settings):
         if not history_path.exists():
             shutil.copyfile(ROOT / "qqq_seed.csv", history_path)
         signal = journal.meta("signal")
+        signal_error = None
         if signal is None or signal["signal_date"] != expected:
-            signal = refresh(broker, history_path, schedule, expected)
-            journal.put_meta("signal", signal)
-            journal.event("signal", signal, now)
+            try:
+                signal = refresh(broker, history_path, schedule, expected)
+                journal.put_meta("signal", signal)
+                journal.event("signal", signal, now)
+            except Exception as exc:
+                # No new requests without a fresh completed-close signal, but the
+                # engine still settles requests it already sent.
+                signal_error = "signal refresh failed: " + (str(exc) if isinstance(exc, Stop) else type(exc).__name__)
         regular_window = schedule.execution_window(now)
         session_row = schedule.trading_session(now)
         # The broker is asked only while the calendar has a regular session;
@@ -184,11 +190,21 @@ def run_locked(cfg, state, settings):
         window_over = bool(session_row) and now >= session_row[1] + timedelta(minutes=15)
         session_key = schedule.session_key(now)
         engine = Engine(broker, journal, settings)
-        result = engine.tick(target=signal["target"], signal_date=signal["signal_date"],
+        # Reads can be slow: quote freshness and the window are re-checked against
+        # the wall clock right before a request is sent.
+        engine.clock = lambda: datetime.now(timezone.utc)
+        signal = signal or {"target": None, "signal_date": None}
+        result = engine.tick(target=signal["target"], signal_date=signal["signal_date"], signal_error=signal_error,
                              expected_signal_date=expected, session=session_key,
                              now=now, may_exchange=schedule.exchange_window(now), may_trade=may_trade,
-                             may_manage_orders=may_manage, market_block=market_block, window_over=window_over)
+                             may_manage_orders=may_manage, market_block=market_block, window_over=window_over,
+                             trade_deadline=schedule.execution_deadline(now) if may_trade else None,
+                             fx_deadline=schedule.exchange_deadline(now))
         journal.put_meta("auth_failures", 0)
+        if signal_error:
+            # Own requests were settled above; the run still ends as a hold.
+            journal.event("result", {"message": result}, now)
+            raise Stop("New orders blocked: " + signal_error)
         journal.put_meta("health", {"at": now.isoformat(), "result": result,
                                    "target": signal["target"], "mode": settings.mode})
         after_success(journal, notifier, result, signal, session_key, now)

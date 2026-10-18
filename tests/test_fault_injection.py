@@ -39,6 +39,7 @@ class FaultBroker(Paper):
     def __init__(self, **kw):
         super().__init__(**kw)
         self.lose = set()            # kinds whose response is lost after the broker acted
+        self.error_after_execute = None   # exception raised AFTER the broker executed (lying error reply)
         self.refuse = None           # Refused/RefusedUnconfirmed raised after the send started
         self.deferred_cancel = False
         self.status_script = {}      # order number -> [(state, filled)] reported before the truth
@@ -69,6 +70,8 @@ class FaultBroker(Paper):
         receipt = super().exchange(krw, quote)
         if "fx" in self.lose:
             raise TimeoutError()
+        if self.error_after_execute is not None:
+            raise self.error_after_execute
         return receipt
 
     def order(self, symbol, side, qty, price, now):
@@ -512,17 +515,43 @@ class FxRecoveryTests(Base):
         self.assertEqual(len(self.sent("fx")), 1)
         self.assertEqual(self.statuses("fx"), [DONE])
 
-    def test_explicit_fx_refusal_confirmed_by_history_then_retried_once(self):
+    def test_undocumented_fx_error_with_lagging_history_never_exchanges_twice(self):
+        # Review finding 1: the exchange executed, the reply was an error, and the FX
+        # history lagged. Absence of a record must not be read as "not executed".
+        self.broker.error_after_execute = RefusedUnconfirmed("Mutation returned non-success API code 7999", "7999")
+        with self.assertRaises(UnknownOutcome):
+            self.tick(may_exchange=True, may_trade=False)
+        self.broker.error_after_execute = None
+        self.broker.candidates_script = [[], [], []]                              # history not yet visible
+        for at in (60, 301, 3600):
+            with self.assertRaises(UnknownOutcome):
+                self.tick(at=at, may_exchange=True, may_trade=False)
+        self.assertEqual(self.tick(at=3700, may_exchange=True, may_trade=False), "recovered: fx")
+        self.tick(at=3710, may_exchange=True, may_trade=False)
+        self.tick(at=3720, may_exchange=True, may_trade=False)
+        self.assertEqual(len(self.sent("fx")), 1)
+        self.assertEqual(self.statuses("fx"), [DONE])
+
+    def test_undocumented_fx_error_without_any_record_locks_instead_of_retrying(self):
         self.broker.refuse = RefusedUnconfirmed("Mutation returned non-success API code 7999", "7999")
         with self.assertRaises(UnknownOutcome):
             self.tick(may_exchange=True, may_trade=False)
         self.broker.refuse = None
         with self.assertRaises(UnknownOutcome):
-            self.tick(at=60, may_exchange=True, may_trade=False)                 # history may lag: wait
-        self.assertEqual(self.tick(at=301, may_exchange=True, may_trade=False), "resolved: fx not executed")
+            self.tick(at=301, may_exchange=True, may_trade=False)
+        with self.assertRaises(Locked):
+            self.tick(at=6 * 3600, may_exchange=True, may_trade=False)
+        self.assertEqual(self.statuses("fx"), [UNKNOWN])
+        self.assertEqual(self.sent("fx"), [])
+
+    def test_documented_not_processed_fx_code_is_retried_after_backoff(self):
+        self.broker.refuse = Refused("FX request rejected before processing (code 7668)", "7668")
+        with self.assertRaises(Refused):
+            self.tick(may_exchange=True, may_trade=False)
+        self.broker.refuse = None
         self.assertEqual(self.statuses("fx"), [REFUSED])
-        self.assertTrue(self.tick(at=302, may_exchange=True, may_trade=False).startswith("waiting: retry back-off"))
-        self.assertEqual(self.tick(at=400, may_exchange=True, may_trade=False), "submitted: fx")
+        self.assertTrue(self.tick(at=1, may_exchange=True, may_trade=False).startswith("waiting: retry back-off"))
+        self.assertEqual(self.tick(at=100, may_exchange=True, may_trade=False), "submitted: fx")
         self.assertEqual(len(self.sent("fx")), 1)
 
 
@@ -723,6 +752,74 @@ class GateOrderingTests(Base):
         self.assertEqual(self.sent("cancel"), [])
 
 
+class SignalOutageTests(Base):
+    """Review finding 3: a signal outage must not stop settling sent requests."""
+
+    def count_status_reads(self):
+        reads = []
+        original = self.broker.order_status
+        self.broker.order_status = lambda receipt: reads.append(receipt["number"]) or original(receipt)
+        return reads
+
+    def test_stale_signal_still_settles_own_order_but_sends_nothing_new(self):
+        self.tick()                                                              # buy TQQQ accepted
+        reads = self.count_status_reads()
+        stale = dict(signal_date="2026-10-13")
+        self.assertEqual(self.tick(at=10, **stale), "waiting: order fill")
+        self.broker.fill(1)
+        self.assertEqual(self.tick(at=20, **stale), "confirmed: filled")
+        with self.assertRaisesRegex(Stop, "Missing/stale completed-close signal"):
+            self.tick(at=30, **stale)
+        self.assertEqual(len(reads), 2)
+        self.assertEqual(len(self.sent("buy")), 1)
+
+    def test_refresh_error_still_cancels_own_timed_out_order(self):
+        self.tick()
+        result = self.tick(at=200, signal_error="signal refresh failed: API read failed: 9999")
+        self.assertEqual(result, "submitted: cancel")                           # own exposure still reduced
+        self.broker.orders[1]["state"] = "cancelled"
+        self.assertEqual(self.tick(at=210, signal_error="x"), "confirmed: cancellation")
+        self.assertEqual(self.tick(at=220, signal_error="x"), "confirmed: cancelled")
+        with self.assertRaisesRegex(Stop, "signal refresh failed"):
+            self.tick(at=230, signal_error="signal refresh failed: API read failed: 9999")
+        self.assertEqual(len(self.sent("buy")), 1)
+
+
+class SlowRunClockTests(Base):
+    """Review finding 4: checks made late in a run use the current time."""
+
+    def test_quote_received_after_slow_reads_is_not_rejected_as_future(self):
+        late = NOW + timedelta(seconds=6)
+        self.engine.clock = lambda: late
+        # The broker stamps the quote with the time it actually answered.
+        self.broker.quote = lambda symbol, now: Quote(D(70), D("70.01"), D("0.01"), late)
+        self.assertEqual(self.tick(), "submitted: order")
+        order = next(r for r in self.journal.rows() if r["kind"] == "order")
+        self.assertEqual(order["created"], late.isoformat())
+
+    def test_window_that_closed_during_the_run_sends_nothing(self):
+        deadline = NOW + timedelta(minutes=14)
+        self.engine.clock = lambda: deadline + timedelta(seconds=1)
+        self.assertEqual(self.tick(trade_deadline=deadline), "idle: execution window closed during this run")
+        self.assertEqual(self.broker.calls, [])
+        self.engine.clock = lambda: deadline - timedelta(seconds=30)
+        self.assertEqual(self.tick(at=1, trade_deadline=deadline), "submitted: order")
+
+    def test_fx_window_that_closed_during_the_run_sends_nothing(self):
+        self.broker.krw = D(1000000)
+        deadline = NOW + timedelta(seconds=30)
+        self.engine.clock = lambda: deadline
+        self.assertEqual(self.tick(may_exchange=True, may_trade=False, fx_deadline=deadline),
+                         "idle: FX window closed during this run")
+        self.assertEqual(self.broker.calls, [])
+
+    def test_clock_behind_the_tick_start_cannot_reopen_a_window(self):
+        deadline = NOW + timedelta(seconds=5)
+        self.engine.clock = lambda: NOW - timedelta(minutes=10)
+        self.assertEqual(self.tick(at=10, trade_deadline=deadline), "idle: execution window closed during this run")
+        self.assertEqual(self.broker.calls, [])
+
+
 # 12 -------------------------------------------------------------------------
 class StateFailureTests(Base):
     def test_send_start_write_failure_sends_nothing(self):
@@ -795,6 +892,16 @@ class CliStateAndNotificationTests(Harness):
         self.assertEqual(titles.count("[보류]"), 1)                              # repeat suppressed
         self.assertEqual(titles.count("[복구]"), 1)
         self.assertTrue(all("access-token" not in t and "client-secret" not in t for t in sent))
+
+    def test_daily_close_outage_still_reaches_the_engine(self):
+        root = self.setup_cli(notifications=False)
+        broken = lambda q: dict(rsp_cd="9999", rsp_msg="candle service down")
+        code, out, fake = self.run_cli(root, US_OPEN, {}, **{"/market/v1/overseas/candles/days": broken})
+        self.assertEqual(code, 1)
+        self.assertIn("signal refresh failed: API read failed: 9999", out["error"])
+        # The account and today's order ledger were read: reconciliation ran.
+        self.assertIn(("GET", "/trading/v1/overseas/orders/today"), fake.calls)
+        self.assertIn(("GET", "/accounts/v1/me/deposit"), fake.calls)
 
     def test_notification_failure_changes_nothing(self):
         root = self.setup_cli()
@@ -881,6 +988,47 @@ class TransportClassificationTests(unittest.TestCase):
         self.assertEqual(http.call_count, 2)
         self.assertEqual(self.slept, [])
 
+    def test_reply_without_response_code_is_unknown_not_refused(self):
+        # Review finding 2: {} or a blank code says nothing about acceptance.
+        c = self.client(allow_mutations=True)
+        for reply in ({}, {"rsp_cd": ""}, {"rsp_cd": None}, {"data": {"oder_no": 3}}):
+            for path in ("/trading/v1/overseas/orders/buy", "/trading/v1/overseas/orders/cancel", "/forex/v1/exchanges"):
+                with patch.object(c, "_http", return_value=reply):
+                    with self.assertRaises(UnknownOutcome) as ctx:
+                        c.call("POST", path, body={}, success=("0001",))
+                    self.assertNotIsInstance(ctx.exception, Refused)
+                    self.assertNotIsInstance(ctx.exception, RefusedUnconfirmed)
+
+    def test_only_documented_fx_codes_count_as_not_processed(self):
+        c = self.client(allow_mutations=True)
+        for code in ("7668", "IGW50004", "EGW00121", "EGW00200"):
+            with patch.object(c, "_http", return_value={"rsp_cd": code}):
+                with self.assertRaises(Refused):
+                    c.call("POST", "/forex/v1/exchanges", body={}, success=("0000",))
+        for code in ("7999", "9999", "EGW00123"):
+            with patch.object(c, "_http", return_value={"rsp_cd": code}):
+                with self.assertRaises(RefusedUnconfirmed):
+                    c.call("POST", "/forex/v1/exchanges", body={}, success=("0000",))
+
+    def test_missing_code_on_order_becomes_unknown_in_the_engine_and_is_not_resent(self):
+        # End to end: the engine keeps the request unknown and does not place it again.
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = Journal(Path(tmp) / "j.sqlite")
+            try:
+                broker = FaultBroker(usd="1000")
+                broker.refuse = UnknownOutcome("Mutating request answered without a response code")
+                engine = Engine(broker, journal, Settings(mode="paper"))
+                args = dict(SIGNAL, now=NOW, may_trade=True)
+                with self.assertRaises(UnknownOutcome):
+                    engine.tick(**args)
+                broker.refuse = None
+                with self.assertRaises(UnknownOutcome):
+                    engine.tick(**dict(args, now=NOW + timedelta(seconds=300)))
+                self.assertEqual([r["status"] for r in journal.rows()], [UNKNOWN])
+                self.assertEqual(broker.orders, {})
+            finally:
+                journal.db.close()
+
     def test_only_refused_connections_count_as_not_sent(self):
         c = Client(self.tmp.name, allow_mutations=True)
         c.token = lambda: "t"
@@ -927,6 +1075,27 @@ class NotifierTests(unittest.TestCase):
         self.assertFalse(n.send("lock", "x", "locked", NOW + timedelta(minutes=5)))
         self.assertTrue(n.send("lock", "x", "locked", NOW + timedelta(minutes=31)))
         self.assertEqual(len(calls), 2)
+
+    def test_failed_channel_is_retried_even_when_another_channel_succeeded(self):
+        # Review finding 5: macOS delivered, Telegram failed -> retry Telegram only.
+        mac, telegram = [], []
+        state = {"telegram_up": False}
+        def tg(text):
+            telegram.append(text)
+            if not state["telegram_up"]:
+                raise OSError("telegram unreachable")
+        channels = {"macos": mac.append, "telegram": tg}
+        n = Notifier(self.journal, channels=channels)
+        self.assertTrue(n.send("lock", "x", "locked", NOW))
+        self.assertFalse(n.send("lock", "x", "locked", NOW + timedelta(minutes=5)))
+        state["telegram_up"] = True
+        self.assertTrue(Notifier(self.journal, channels=channels).send("lock", "x", "locked", NOW + timedelta(minutes=31)))
+        self.assertEqual((len(mac), len(telegram)), (1, 2))          # macOS not repeated
+        self.assertFalse(n.send("lock", "x", "locked", NOW + timedelta(hours=1)))
+        self.assertTrue(n.send("lock", "x", "locked", NOW + timedelta(hours=7)))
+        self.assertEqual((len(mac), len(telegram)), (2, 3))
+        status = self.journal.meta("notified")["lock:x"]["channels"]
+        self.assertEqual({k: v["ok"] for k, v in status.items()}, {"macos": True, "telegram": True})
 
     def test_text_never_carries_secrets_numbers_or_amounts(self):
         with patch.dict(os.environ, {"TELEGRAM_BOT_TOKEN": "123456:SECRET-TOKEN", "MERITZ_CLIENT_SECRET": "very-secret"}):

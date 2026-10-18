@@ -349,7 +349,6 @@ def set_lock(journal, code, message, now, *, action=None, required=None):
 
 
 CLOCK_SKEW_SECONDS = 120          # broker record may precede our clock by this much
-FX_REFUSAL_CONFIRM_SECONDS = 300   # wait before trusting an empty FX history after a refusal
 PREPARED_STALE_SECONDS = 300       # another process's unsent intent is abandoned only after this
 
 
@@ -368,6 +367,15 @@ class Engine:
         self.j.put_meta("mode", self.cfg.mode)
         self.run_id = str(uuid4())
         self.rng = random.Random()
+        self.clock = None   # wall clock for checks made late in a run; None = use the tick's `now`
+
+    def _current(self, now):
+        """Time for freshness and window checks made after slow reads. Never earlier
+        than the tick's start, so a skewed clock cannot reopen a closed window."""
+        return max(now, self.clock()) if self.clock is not None else now
+
+    def _past(self, deadline, now):
+        return deadline is not None and self._current(now) >= deadline
 
     # ---- locks, failures and back-off (all persisted: a restart resets nothing) ----
 
@@ -513,13 +521,6 @@ class Engine:
                 self._lock("ambiguous_attribution",
                            f"{len(candidates)} broker records match unresolved action {row['id']}; none attributed",
                            now, row["id"], required="Identify the bot's request in the broker app, then `resolve --action`")
-            if row["kind"] == "fx" and result.get("refused_code") and age >= FX_REFUSAL_CONFIRM_SECONDS:
-                # Two independent facts: an explicit refusal reply AND a complete
-                # history query made well after it without any match.
-                self.j.update(row["id"], REFUSED, result=dict(
-                    result, confirmed_not_executed="explicit refusal and no FX history match after delay"))
-                self._register_failure(now, "fx refused: " + str(result["refused_code"]))
-                return "resolved: fx not executed"
             if row["kind"] == "cancel":
                 original = payload["original"]
                 state = self.broker.order_status(original)
@@ -697,11 +698,15 @@ class Engine:
         return None
 
     def tick(self, *, target, signal_date, expected_signal_date, session, now,
-             may_exchange=False, may_trade=False, may_manage_orders=None, market_block=None, window_over=False):
+             may_exchange=False, may_trade=False, may_manage_orders=None, market_block=None, window_over=False,
+             signal_error=None, trade_deadline=None, fx_deadline=None):
         if now.tzinfo is None:
             raise ValueError("timezone-aware now required")
-        if target not in {"QQQ", "TQQQ"} or signal_date != expected_signal_date:
-            raise Stop("Missing/stale completed-close signal")
+        # A missing or stale signal blocks NEW requests only; requests already sent
+        # are still settled below (status reads, fills, own-order cancels).
+        signal_ok = target in {"QQQ", "TQQQ"} and signal_date == expected_signal_date and not signal_error
+        if not signal_ok:
+            target = None
         locked = self.j.meta("halt")
         snap = self.broker.snapshot()
         # Read-only settling of requests this engine already sent runs first, even
@@ -713,6 +718,8 @@ class Engine:
             return result
         if locked:
             raise Locked(locked)
+        if not signal_ok:
+            raise Stop("Missing/stale completed-close signal" + (": " + signal_error if signal_error else ""))
         if snap.external_open_orders:
             raise Stop("An untracked open order exists; use a dedicated account")
         unsupported = unsupported_holdings(snap.positions, self.cfg)
@@ -728,12 +735,16 @@ class Engine:
                 if wait:
                     return wait
                 self._require_no_reservations(now)
-                quote = self.broker.fx_quote(now)
-                check_fx_quote(quote, now, self.cfg)
+                if self._past(fx_deadline, now):
+                    return "idle: FX window closed during this run"
+                quote = self.broker.fx_quote(self._current(now))
+                check_fx_quote(quote, self._current(now), self.cfg)
+                if self._past(fx_deadline, now):
+                    return "idle: FX window closed during this run"
                 cash = snap.cash_usd if snap.cash_usd is not None else snap.usd
                 return self._submit("fx", {"krw": str(krw), "usd_before": str(snap.usd), "cash_usd_before": str(cash),
-                                           "rate": str(quote.ask), "quote_time": quote.server_time}, now, session,
-                                    lambda: self.broker.exchange(krw, quote))
+                                           "rate": str(quote.ask), "quote_time": quote.server_time},
+                                    self._current(now), session, lambda: self.broker.exchange(krw, quote))
         if not may_trade:
             return note or "idle: outside execution window"
         wait = self._retry_wait(now)
@@ -754,8 +765,10 @@ class Engine:
             side = "sell"
         else:
             symbol, side, qty = target, "buy", D(0)
-        quote = self.broker.quote(symbol, now)
-        check_quote(quote, now, self.cfg)
+        if self._past(trade_deadline, now):
+            return "idle: execution window closed during this run"
+        quote = self.broker.quote(symbol, self._current(now))
+        check_quote(quote, self._current(now), self.cfg)   # fresh time: reads may have been slow
         price = limit_price(quote, side, self.cfg)
         if side == "buy":
             qty = buy_quantity(snap.usd, snap.buying_power, price, self.cfg)
@@ -767,11 +780,14 @@ class Engine:
                     # on the next run inside the window; carried over after it.
                     return "waiting: sale proceeds not yet orderable"
                 return "idle: insufficient USD for one share"
+        if self._past(trade_deadline, now):
+            return "idle: execution window closed during this run"
         payload = dict(symbol=symbol, side=side, qty=str(qty), price=str(price),
                        held_before=str(snap.positions.get(symbol, D(0))), target=target,
                        signal_date=signal_date, quoted_at=quote.at.isoformat())
-        return self._submit("order", payload, now, session,
-                            lambda: self.broker.order(symbol, side, qty, price, now))
+        sent_at = self._current(now)
+        return self._submit("order", payload, sent_at, session,
+                            lambda: self.broker.order(symbol, side, qty, price, sent_at))
 
 
 def _ref(receipt):
