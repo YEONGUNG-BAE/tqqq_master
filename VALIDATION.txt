@@ -1,4 +1,4 @@
-# 검증 출력 — 2026-10-24 12:15 KST, macOS Darwin 25.5.0
+# 검증 출력 — 2026-10-24 13:12 KST, macOS Darwin 25.5.0
 # Python 3.14.5 | exchange-calendars 4.12 | pandas 2.3.3 | NumPy 2.5.4
 # 명령: .venv/bin/python -m unittest discover -s tests -v
 # exchange-calendars의 NumPy DeprecationWarning은 알려진 경고이며 결과에 영향 없음
@@ -95,15 +95,27 @@ test_unscheduled_closure_inside_the_window_is_not_guessed (test_audit_e.Settleme
 <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
   delta = pd.Timedelta(
 ok
+test_healthy_plan_baseline (test_audit_f.CliTests.test_healthy_plan_baseline) ... <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e1f44f0>
+  d = dict(zip(self.fieldnames, row))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_tax_plan_failure_still_runs_the_engine_and_ends_as_a_hold (test_audit_f.CliTests.test_tax_plan_failure_still_runs_the_engine_and_ends_as_a_hold) ... ok
+test_tax_plan_failure_under_a_lock_stays_a_lock (test_audit_f.CliTests.test_tax_plan_failure_under_a_lock_stays_a_lock) ... ok
+test_confirmed_tqqq_exit_sell_goes_out_and_the_buy_is_held (test_audit_f.EngineTests.test_confirmed_tqqq_exit_sell_goes_out_and_the_buy_is_held) ... ok
+test_intraday_recovery_sells_the_risk_symbol_but_holds_the_buy (test_audit_f.EngineTests.test_intraday_recovery_sells_the_risk_symbol_but_holds_the_buy) ... ok
+test_locks_still_stop_everything (test_audit_f.EngineTests.test_locks_still_stop_everything) ... ok
+test_order_sent_before_the_outage_is_still_settled (test_audit_f.EngineTests.test_order_sent_before_the_outage_is_still_settled) ... ok
+test_return_switch_sell_and_new_deposit_fx_are_held (test_audit_f.EngineTests.test_return_switch_sell_and_new_deposit_fx_are_held) ... ok
+test_tax_sell_in_flight_is_settled_and_booked_once_the_plan_returns (test_audit_f.TaxOrderDuringOutageTests.test_tax_sell_in_flight_is_settled_and_booked_once_the_plan_returns) ... ok
 test_cancel_confirmed_vs_cancel_requested (test_automation.AdapterTests.test_cancel_confirmed_vs_cancel_requested) ... ok
 test_no_automatic_warning_ack (test_automation.AdapterTests.test_no_automatic_warning_ack) ... ok
 test_observe_transport_blocks_post_before_network (test_automation.AdapterTests.test_observe_transport_blocks_post_before_network) ... ok
 test_partial_cancel_does_not_finish_original_order (test_automation.AdapterTests.test_partial_cancel_does_not_finish_original_order) ... ok
 test_successful_post_is_not_retried_on_expired_token (test_automation.AdapterTests.test_successful_post_is_not_retried_on_expired_token) ... ok
-<project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
-  delta = pd.Timedelta(
-<project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
-  delta = pd.Timedelta(
 test_completed_close_not_current_intraday (test_automation.CalendarHistoryTests.test_completed_close_not_current_intraday) ... ok
 test_dividend_adjustment_mismatch_stops (test_automation.CalendarHistoryTests.test_dividend_adjustment_mismatch_stops) ... ok
 test_dst_and_early_close (test_automation.CalendarHistoryTests.test_dst_and_early_close) ... ok
@@ -146,10 +158,7 @@ test_kill_after_tax_sell_done_moves_proceeds_exactly_once (test_crash_recovery.T
 test_kill_between_intent_and_reservation_leaves_nothing_counted (test_crash_recovery.TaxCrashTests.test_kill_between_intent_and_reservation_leaves_nothing_counted) ... ok
 test_orphan_reservation_on_a_terminal_request_is_released (test_crash_recovery.TaxCrashTests.test_orphan_reservation_on_a_terminal_request_is_released) ... ok
 test_unknown_request_keeps_its_reservation_and_is_not_resent (test_crash_recovery.TaxCrashTests.test_unknown_request_keeps_its_reservation_and_is_not_resent) ... ok
-test_cli_doctor_with_live_config_is_read_only_and_redacted (test_doctor.DoctorTests.test_cli_doctor_with_live_config_is_read_only_and_redacted) ... <project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimes.py:668: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e2dbf10>
-  converted = ints_to_pydatetime(
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-ok
+test_cli_doctor_with_live_config_is_read_only_and_redacted (test_doctor.DoctorTests.test_cli_doctor_with_live_config_is_read_only_and_redacted) ... ok
 test_credit_debt_is_listed_and_blocks (test_doctor.DoctorTests.test_credit_debt_is_listed_and_blocks) ... ok
 test_dividend_adjusted_closes_block_signal_but_keep_fx_plan (test_doctor.DoctorTests.test_dividend_adjusted_closes_block_signal_but_keep_fx_plan) ... ok
 test_existing_non_strategy_holdings_are_shown_and_never_sold (test_doctor.DoctorTests.test_existing_non_strategy_holdings_are_shown_and_never_sold) ... ok
@@ -177,7 +186,7 @@ test_token_refusal_is_explicit_and_post_token_error_is_not_resent (test_fault_in
 test_repeated_token_refusal_locks_and_unlock_resumes (test_fault_injection.CliAuthLockTests.test_repeated_token_refusal_locks_and_unlock_resumes) ... ok
 test_overlapping_scheduler_or_second_state_folder_does_nothing (test_fault_injection.CliConcurrencyTests.test_overlapping_scheduler_or_second_state_folder_does_nothing) ... ok
 test_corrupt_state_database_blocks_every_request (test_fault_injection.CliStateAndNotificationTests.test_corrupt_state_database_blocks_every_request) ... ok
-test_daily_close_outage_still_reaches_the_engine (test_fault_injection.CliStateAndNotificationTests.test_daily_close_outage_still_reaches_the_engine) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e2dbd30>
+test_daily_close_outage_still_reaches_the_engine (test_fault_injection.CliStateAndNotificationTests.test_daily_close_outage_still_reaches_the_engine) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e14fc40>
   def __init__(self, name, parent):
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
@@ -381,6 +390,6 @@ test_registered_withdrawal_moves_once_and_unrelated_ones_are_not_tax (test_tax_r
 test_release_only_by_explicit_user_command (test_tax_reserve.WithdrawalTests.test_release_only_by_explicit_user_command) ... ok
 
 ----------------------------------------------------------------------
-Ran 319 tests in 10.428s
+Ran 328 tests in 10.902s
 
 OK

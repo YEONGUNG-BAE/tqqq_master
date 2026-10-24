@@ -333,7 +333,15 @@ def run_locked(cfg, state, settings):
         # Reads can be slow: quote freshness and the window are re-checked against
         # the wall clock right before a request is sent.
         engine.clock = lambda: datetime.now(timezone.utc)
-        _, engine.tax_plan, engine.tax_blockers_fn = make_plan(journal, cfg, now)
+        try:
+            _, engine.tax_plan, engine.tax_blockers_fn = make_plan(journal, cfg, now)
+        except JournalError:
+            raise
+        except Exception as exc:
+            # Tax tables unusable: the engine still settles its own requests and
+            # may send a confirmed TQQQ exit sell; new buys and FX are held.
+            engine.tax_unavailable = "tax plan unavailable (" + type(exc).__name__ + ")"
+            journal.event("tax_plan_failed", {"error_type": type(exc).__name__}, now)
         engine.reverse_fx_verified = (cfg.get("verified") or {}).get("reverse_fx") is True
         signal = signal or {"target": None, "signal_date": None}
         result = engine.tick(target=signal["target"], signal_date=signal["signal_date"], signal_error=signal_error,
@@ -348,6 +356,9 @@ def run_locked(cfg, state, settings):
             # Own requests were settled above; the run still ends as a hold.
             journal.event("result", {"message": result}, now)
             raise Stop("New orders blocked: " + signal_error)
+        if engine.tax_unavailable:
+            journal.event("result", {"message": result}, now)
+            raise Stop(f"New buys and FX held: {engine.tax_unavailable}; tax reserves cannot be checked")
         journal.put_meta("health", {"at": now.isoformat(), "result": result,
                                    "target": signal["target"], "mode": settings.mode})
         after_success(journal, notifier, result, signal, session_key, now)

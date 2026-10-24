@@ -466,6 +466,8 @@ class Engine:
         # Tax reserve plan (stage 3). None = no tax behaviour (paper replay, tests).
         self.tax_plan = None
         self.tax_blockers_fn = lambda year: []
+        # Set when the tax plan could not be built: reserves are then unknown.
+        self.tax_unavailable = None
         self.reverse_fx_verified = False
         self.last_action_id = None
 
@@ -1050,6 +1052,7 @@ class Engine:
                 raise Stop("Fractional holdings require separate handling")
         else:
             symbol, side = target, "buy"
+        self._tax_hold(side, symbol, target)
         quote = self.broker.quote(symbol, self._current(now))
         check_quote(quote, self._current(now), self.cfg)
         price = limit_price(quote, side, self.cfg)
@@ -1081,6 +1084,16 @@ class Engine:
             if self.tax_plan.status(year, now)[need] > 0:
                 return year
         return None
+
+    def _tax_hold(self, side, symbol, target):
+        """With the tax plan unavailable the reserves cannot be checked: only a
+        sell of the risk symbol toward the defensive target may go out (it
+        spends no money). New buys, FX and other sells are held."""
+        if self.tax_unavailable is None:
+            return
+        if side == "sell" and symbol == RISK_SYMBOL and target == DEFENSIVE_SYMBOL:
+            return
+        raise Stop(f"New buys and FX held: {self.tax_unavailable}; tax reserves cannot be checked")
 
     def _reserved(self, now):
         if self.tax_plan is None:
@@ -1217,8 +1230,8 @@ class Engine:
             reverse = self._reverse_fx(snap, session, now, fx_deadline)
             if reverse:
                 return reverse
-        if may_exchange:
-            # KRW reserved for tax is never converted.
+        if may_exchange and self.tax_unavailable is None:
+            # KRW reserved for tax is never converted (unknown reserves: no FX).
             krw = fx_amount(max(D(0), snap.krw - reserved_krw), fx_spent(self.j.rows(), session), self.cfg)
             if krw >= self.cfg.min_fx_krw:
                 wait = self._retry_wait(now)
@@ -1272,6 +1285,7 @@ class Engine:
                 taxed = self._tax_sell(snap, target, signal_date, session, now, trade_deadline)
                 if taxed:
                     return taxed
+        self._tax_hold(side, symbol, target)
         if self._past(trade_deadline, now):
             return "idle: execution window closed during this run"
         quote = self.broker.quote(symbol, self._current(now))
