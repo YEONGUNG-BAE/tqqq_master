@@ -14,6 +14,7 @@
     "order_timeout_seconds": 120,
     "max_orders_per_session": 20,
     "migrate_symbols": [],
+    "instrument_markets": {"SGOV": null},
     "reservation_lookup_start": null,
     "unknown_outcome_lock_minutes": 360,
     "inconsistency_lock_minutes": 120,

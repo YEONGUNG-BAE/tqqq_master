@@ -78,6 +78,12 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(instruments.resolve("SGOV", {"SGOV": "AX"}).order_exchange, "0066")
         self.assertEqual(instruments.resolve("SGOV", {"SGOV": "NY"}).order_exchange, "0321")
 
+    def test_example_config_leaves_sgov_unconfirmed_and_migrates_nothing(self):
+        example = json.loads((ROOT / "config.example.json").read_text())
+        settings = Settings(**example["execution"])
+        self.assertEqual((settings.instrument_markets, settings.migrate_symbols, settings.mode), ({}, [], "observe"))
+        self.assertTrue(all(v is False for v in example["verified"].values()))
+
     def test_no_default_market_for_an_unconfirmed_instrument(self):
         with self.assertRaises(instruments.RouteUnverified):
             instruments.resolve("SGOV")

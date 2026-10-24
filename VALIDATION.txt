@@ -1,4 +1,4 @@
-# 검증 출력 — 2026-10-24 15:07 KST, macOS Darwin 25.5.0
+# 검증 출력 — 2026-10-24 15:43 KST, macOS Darwin 25.5.0
 # Python 3.14.5 | exchange-calendars 4.12 | pandas 2.3.3 | NumPy 2.5.4
 # 명령: .venv/bin/python -m unittest discover -s tests -v
 # exchange-calendars의 NumPy DeprecationWarning은 알려진 경고이며 결과에 영향 없음
@@ -99,7 +99,7 @@ test_healthy_plan_baseline (test_audit_f.CliTests.test_healthy_plan_baseline) ..
   delta = pd.Timedelta(
 <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
   delta = pd.Timedelta(
-/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10eeac6d0>
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c3086d0>
   d = dict(zip(self.fieldnames, row))
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
@@ -188,7 +188,7 @@ test_token_refusal_is_explicit_and_post_token_error_is_not_resent (test_fault_in
 test_repeated_token_refusal_locks_and_unlock_resumes (test_fault_injection.CliAuthLockTests.test_repeated_token_refusal_locks_and_unlock_resumes) ... ok
 test_overlapping_scheduler_or_second_state_folder_does_nothing (test_fault_injection.CliConcurrencyTests.test_overlapping_scheduler_or_second_state_folder_does_nothing) ... ok
 test_corrupt_state_database_blocks_every_request (test_fault_injection.CliStateAndNotificationTests.test_corrupt_state_database_blocks_every_request) ... ok
-test_daily_close_outage_still_reaches_the_engine (test_fault_injection.CliStateAndNotificationTests.test_daily_close_outage_still_reaches_the_engine) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10ee13880>
+test_daily_close_outage_still_reaches_the_engine (test_fault_injection.CliStateAndNotificationTests.test_daily_close_outage_still_reaches_the_engine) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c253880>
   def __init__(self, name, parent):
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
@@ -346,6 +346,72 @@ test_resume_is_identical_to_uninterrupted_run_without_network (test_replay.Repla
 test_side_effect_before_lost_receipt_is_not_repeated (test_replay.ReplayTests.test_side_effect_before_lost_receipt_is_not_repeated) ... ok
 test_fx_uses_customer_applied_buy_rate_and_no_duplicate_fee (test_schema_contract.OfficialSchemaTests.test_fx_uses_customer_applied_buy_rate_and_no_duplicate_fee) ... ok
 test_order_buy_sell_and_cancel_request_fields_match_official_schema (test_schema_contract.OfficialSchemaTests.test_order_buy_sell_and_cancel_request_fields_match_official_schema) ... ok
+test_confirmed_route_is_shown_and_a_conflicting_one_is_flagged (test_sgov.DoctorSgovTests.test_confirmed_route_is_shown_and_a_conflicting_one_is_flagged) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x108b9c400>
+  d = dict(zip(self.fieldnames, row))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x108b9c220>
+  d = dict(zip(self.fieldnames, row))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10878f970>
+  d = dict(zip(self.fieldnames, row))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10878fe20>
+  d = dict(zip(self.fieldnames, row))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c2535b0>
+  d = dict(zip(self.fieldnames, row))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c253c40>
+  d = dict(zip(self.fieldnames, row))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c253b50>
+  d = dict(zip(self.fieldnames, row))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c253a60>
+  d = dict(zip(self.fieldnames, row))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c253f10>
+  d = dict(zip(self.fieldnames, row))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c2531f0>
+  d = dict(zip(self.fieldnames, row))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_holdings_state_never_counts_qqq_as_the_defensive_holding (test_sgov.DoctorSgovTests.test_holdings_state_never_counts_qqq_as_the_defensive_holding) ... ok
+test_signal_and_holdings_are_shown_apart_and_the_route_probe_is_evidence_only (test_sgov.DoctorSgovTests.test_signal_and_holdings_are_shown_apart_and_the_route_probe_is_evidence_only) ... ok
+test_round_trip_never_routes_through_qqq (test_sgov.EngineSgovTests.test_round_trip_never_routes_through_qqq) ... ok
+test_sgov_quote_and_order_use_the_confirmed_market_and_its_documented_exchange (test_sgov.MeritzSgovPathTests.test_sgov_quote_and_order_use_the_confirmed_market_and_its_documented_exchange) ... ok
+test_unconfirmed_sgov_sends_nothing (test_sgov.MeritzSgovPathTests.test_unconfirmed_sgov_sends_nothing) ... ok
+test_wrong_market_unit_or_restriction_is_refused_without_a_fallback (test_sgov.MeritzSgovPathTests.test_wrong_market_unit_or_restriction_is_refused_without_a_fallback) ... ok
+test_example_config_leaves_sgov_unconfirmed_and_migrates_nothing (test_sgov.RouteTests.test_example_config_leaves_sgov_unconfirmed_and_migrates_nothing) ... ok
+test_no_default_market_for_an_unconfirmed_instrument (test_sgov.RouteTests.test_no_default_market_for_an_unconfirmed_instrument) ... ok
+test_overrides_cannot_redirect_reviewed_routes_or_use_unknown_codes (test_sgov.RouteTests.test_overrides_cannot_redirect_reviewed_routes_or_use_unknown_codes) ... ok
+test_reviewed_routes_and_documented_pairs (test_sgov.RouteTests.test_reviewed_routes_and_documented_pairs) ... ok
+test_refresh_reads_only_qqq_closes_and_sgov_prices_cannot_move_the_signal (test_sgov.SignalPreservationTests.test_refresh_reads_only_qqq_closes_and_sgov_prices_cannot_move_the_signal) ... ok
+test_same_qqq_history_gives_the_same_switch_dates_and_expiry_flags (test_sgov.SignalPreservationTests.test_same_qqq_history_gives_the_same_switch_dates_and_expiry_flags) ... <project>/tests/test_sgov.py:30: ResourceWarning: unclosed file <_io.TextIOWrapper name='<project>/qqq_seed.csv' mode='r' encoding='utf-8'>
+  rows = list(csv.DictReader(open(ROOT / "qqq_seed.csv")))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_symbols_are_defined_once_and_the_signal_is_qqq (test_sgov.SignalPreservationTests.test_symbols_are_defined_once_and_the_signal_is_qqq) ... ok
+test_done_qqq_buy_missing_from_the_old_intent_is_booked_there_before_the_carry (test_sgov_migration.LegacyRequestTests.test_done_qqq_buy_missing_from_the_old_intent_is_booked_there_before_the_carry) ... ok
+test_open_qqq_buy_is_cancelled_with_its_receipt_and_the_budget_carries_once (test_sgov_migration.LegacyRequestTests.test_open_qqq_buy_is_cancelled_with_its_receipt_and_the_budget_carries_once) ... ok
+test_open_tqqq_exit_sell_of_the_old_version_is_not_cancelled_as_a_conflict (test_sgov_migration.LegacyRequestTests.test_open_tqqq_exit_sell_of_the_old_version_is_not_cancelled_as_a_conflict) ... ok
+test_unknown_qqq_buy_is_matched_by_its_original_identity_and_never_resent (test_sgov_migration.LegacyRequestTests.test_unknown_qqq_buy_is_matched_by_its_original_identity_and_never_resent) ... ok
+test_mid_band_is_never_reset_to_tqqq (test_sgov_migration.SignalCacheTests.test_mid_band_is_never_reset_to_tqqq) ... ok
+test_same_day_cache_of_the_old_version_is_rebuilt_from_the_same_closes_once (test_sgov_migration.SignalCacheTests.test_same_day_cache_of_the_old_version_is_rebuilt_from_the_same_closes_once) ... ok
+test_short_or_stale_history_gives_no_target (test_sgov_migration.SignalCacheTests.test_short_or_stale_history_gives_no_target) ... ok
+test_kill_inside_the_migration_leaves_the_old_cache_and_a_restart_applies_it_once (test_sgov_migration.SignalMigrationCrashTests.test_kill_inside_the_migration_leaves_the_old_cache_and_a_restart_applies_it_once) ... ok
+test_kill_between_superseding_and_the_new_intent_never_loses_the_carried_money (test_sgov_migration.SupersedeCrashTests.test_kill_between_superseding_and_the_new_intent_never_loses_the_carried_money) ... ok
+test_monitor_status_carries_the_sgov_target_without_amounts (test_sgov_tax.AlertTests.test_monitor_status_carries_the_sgov_target_without_amounts) ... ok
+test_distribution_cash_never_becomes_intraday_switch_money (test_sgov_tax.DistributionCashTests.test_distribution_cash_never_becomes_intraday_switch_money) ... ok
+test_distribution_is_booked_once_apart_from_gains_with_reported_figures (test_sgov_tax.DistributionLedgerTests.test_distribution_is_booked_once_apart_from_gains_with_reported_figures) ... <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+ok
+test_sgov_holdings_never_count_as_a_cash_reserve (test_sgov_tax.SgovTaxSellTests.test_sgov_holdings_never_count_as_a_cash_reserve) ... ok
+test_sgov_tax_sell_stays_within_the_installment_gap_plus_one_share (test_sgov_tax.SgovTaxSellTests.test_sgov_tax_sell_stays_within_the_installment_gap_plus_one_share) ... ok
+test_without_a_cap_or_with_ledger_problems_only_a_plan_is_recorded (test_sgov_tax.SgovTaxSellTests.test_without_a_cap_or_with_ledger_problems_only_a_plan_is_recorded) ... ok
 test_broker_realized_pl_is_a_gross_anomaly_check_only (test_tax.EstimateTests.test_broker_realized_pl_is_a_gross_anomaly_check_only) ... ok
 test_dividends_are_reported_apart_from_capital_gains (test_tax.EstimateTests.test_dividends_are_reported_apart_from_capital_gains) ... ok
 test_one_deduction_over_account_and_other_brokers_and_rounding (test_tax.EstimateTests.test_one_deduction_over_account_and_other_brokers_and_rounding) ... ok
@@ -354,7 +420,11 @@ test_fifo_partial_sale_with_fees_and_settlement_fx (test_tax.FifoTests.test_fifo
 test_pre_ledger_holdings_sold_are_cost_incomplete_and_unexplained (test_tax.FifoTests.test_pre_ledger_holdings_sold_are_cost_incomplete_and_unexplained) ... ok
 test_tax_ledger_problems_never_block_strategy_switch (test_tax.FifoTests.test_tax_ledger_problems_never_block_strategy_switch) ... ok
 test_unit_error_missing_fx_and_missing_fee_are_incomplete (test_tax.FifoTests.test_unit_error_missing_fx_and_missing_fee_are_incomplete) ... ok
-test_year_follows_settlement_date_across_new_year (test_tax.FifoTests.test_year_follows_settlement_date_across_new_year) ... ok
+test_year_follows_settlement_date_across_new_year (test_tax.FifoTests.test_year_follows_settlement_date_across_new_year) ... <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+ok
 test_sync_records_completed_fills_fees_dividends_and_rates_idempotently (test_tax.SyncTests.test_sync_records_completed_fills_fees_dividends_and_rates_idempotently) ... <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
   delta = pd.Timedelta(
 <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
@@ -392,6 +462,6 @@ test_registered_withdrawal_moves_once_and_unrelated_ones_are_not_tax (test_tax_r
 test_release_only_by_explicit_user_command (test_tax_reserve.WithdrawalTests.test_release_only_by_explicit_user_command) ... ok
 
 ----------------------------------------------------------------------
-Ran 330 tests in 10.938s
+Ran 359 tests in 13.085s
 
 OK
