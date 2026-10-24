@@ -1,4 +1,4 @@
-# 검증 출력 — 2026-10-24 16:35 KST, macOS Darwin 25.5.0
+# 검증 출력 — 2026-10-24 17:07 KST, macOS Darwin 25.5.0
 # Python 3.14.5 | exchange-calendars 4.12 | pandas 2.3.3 | NumPy 2.5.4
 # 명령: .venv/bin/python -m unittest discover -s tests -v
 # exchange-calendars의 NumPy DeprecationWarning은 알려진 경고이며 결과에 영향 없음
@@ -99,7 +99,7 @@ test_healthy_plan_baseline (test_audit_f.CliTests.test_healthy_plan_baseline) ..
   delta = pd.Timedelta(
 <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
   delta = pd.Timedelta(
-/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a3a57b0>
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e1c5990>
   d = dict(zip(self.fieldnames, row))
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
@@ -188,7 +188,7 @@ test_token_refusal_is_explicit_and_post_token_error_is_not_resent (test_fault_in
 test_repeated_token_refusal_locks_and_unlock_resumes (test_fault_injection.CliAuthLockTests.test_repeated_token_refusal_locks_and_unlock_resumes) ... ok
 test_overlapping_scheduler_or_second_state_folder_does_nothing (test_fault_injection.CliConcurrencyTests.test_overlapping_scheduler_or_second_state_folder_does_nothing) ... ok
 test_corrupt_state_database_blocks_every_request (test_fault_injection.CliStateAndNotificationTests.test_corrupt_state_database_blocks_every_request) ... ok
-test_daily_close_outage_still_reaches_the_engine (test_fault_injection.CliStateAndNotificationTests.test_daily_close_outage_still_reaches_the_engine) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a3a6a70>
+test_daily_close_outage_still_reaches_the_engine (test_fault_injection.CliStateAndNotificationTests.test_daily_close_outage_still_reaches_the_engine) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e1c6c50>
   def __init__(self, name, parent):
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
@@ -301,6 +301,16 @@ test_a_finished_plan_never_trades_again (test_livecheck.RoundTripTests.test_a_fi
 test_each_step_waits_for_a_terminal_fill_reflected_in_holdings (test_livecheck.RoundTripTests.test_each_step_waits_for_a_terminal_fill_reflected_in_holdings) ... ok
 test_six_one_share_steps_end_in_usd_and_never_touch_other_holdings (test_livecheck.RoundTripTests.test_six_one_share_steps_end_in_usd_and_never_touch_other_holdings) ... ok
 test_tax_reserves_and_switch_state_are_untouched_by_check_trades (test_livecheck.RoundTripTests.test_tax_reserves_and_switch_state_are_untouched_by_check_trades) ... ok
+test_resume_during_a_tax_outage_still_reconciles_the_open_order (test_livecheck_fixes.CliStopTests.test_resume_during_a_tax_outage_still_reconciles_the_open_order) ... ok
+test_stop_reaches_a_running_executor_which_cancels_its_open_order (test_livecheck_fixes.CliStopTests.test_stop_reaches_a_running_executor_which_cancels_its_open_order) ... ok
+test_stop_without_an_executor_records_the_request_and_says_cancel_is_not_sent (test_livecheck_fixes.CliStopTests.test_stop_without_an_executor_records_the_request_and_says_cancel_is_not_sent) ... ok
+test_a_marker_left_by_a_finished_or_unstarted_plan_is_released (test_livecheck_fixes.OwnershipTests.test_a_marker_left_by_a_finished_or_unstarted_plan_is_released) ... ok
+test_a_second_state_folder_cannot_start_a_check_on_the_same_account (test_livecheck_fixes.OwnershipTests.test_a_second_state_folder_cannot_start_a_check_on_the_same_account) ... ok
+test_running_without_the_marker_reclaims_it_before_any_order_or_refuses (test_livecheck_fixes.OwnershipTests.test_running_without_the_marker_reclaims_it_before_any_order_or_refuses) ... ok
+test_prepared_hook_failure_rolls_back_the_intent_and_evidence (test_livecheck_fixes.ReadHelperTests.test_prepared_hook_failure_rolls_back_the_intent_and_evidence) ... ok
+test_reading_a_plan_inside_a_transaction_never_commits_it (test_livecheck_fixes.ReadHelperTests.test_reading_a_plan_inside_a_transaction_never_commits_it) ... ok
+test_kill_between_claiming_the_account_and_marking_running_recovers (test_livecheck_fixes.StartCrashTests.test_kill_between_claiming_the_account_and_marking_running_recovers) ... ok
+test_unknown_tax_reserve_still_settles_own_orders_and_holds_only_buys (test_livecheck_fixes.TaxOutageTests.test_unknown_tax_reserve_still_settles_own_orders_and_holds_only_buys) ... ok
 test_active_reservation_blocks_order_and_is_not_cancelled (test_market_reservations.EngineReservationGateTests.test_active_reservation_blocks_order_and_is_not_cancelled) ... ok
 test_broker_without_lookup_fails_closed (test_market_reservations.EngineReservationGateTests.test_broker_without_lookup_fails_closed) ... ok
 test_fx_is_also_blocked_but_only_when_fx_would_be_sent (test_market_reservations.EngineReservationGateTests.test_fx_is_also_blocked_but_only_when_fx_would_be_sent) ... ok
@@ -382,38 +392,38 @@ test_resume_is_identical_to_uninterrupted_run_without_network (test_replay.Repla
 test_side_effect_before_lost_receipt_is_not_repeated (test_replay.ReplayTests.test_side_effect_before_lost_receipt_is_not_repeated) ... ok
 test_fx_uses_customer_applied_buy_rate_and_no_duplicate_fee (test_schema_contract.OfficialSchemaTests.test_fx_uses_customer_applied_buy_rate_and_no_duplicate_fee) ... ok
 test_order_buy_sell_and_cancel_request_fields_match_official_schema (test_schema_contract.OfficialSchemaTests.test_order_buy_sell_and_cancel_request_fields_match_official_schema) ... ok
-test_plan_shows_the_buy_held_and_the_sell_planned_when_sell_only (test_sgov.DoctorSellOnlyTests.test_plan_shows_the_buy_held_and_the_sell_planned_when_sell_only) ... ok
-test_confirmed_route_is_shown_and_a_conflicting_one_is_flagged (test_sgov.DoctorSgovTests.test_confirmed_route_is_shown_and_a_conflicting_one_is_flagged) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x106c1d120>
-  d = dict(zip(self.fieldnames, row))
+test_plan_shows_the_buy_held_and_the_sell_planned_when_sell_only (test_sgov.DoctorSellOnlyTests.test_plan_shows_the_buy_held_and_the_sell_planned_when_sell_only) ... <project>/tests/test_doctor.py:79: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10aadc7c0>
+  dict(date=d.replace("-", ""), prpr=p) for d, p in sorted(self.closes.items(), reverse=True)
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x106c1c310>
-  d = dict(zip(self.fieldnames, row))
+<project>/tests/test_doctor.py:79: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10aadd5d0>
+  dict(date=d.replace("-", ""), prpr=p) for d, p in sorted(self.closes.items(), reverse=True)
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1067d3c40>
-  d = dict(zip(self.fieldnames, row))
+<project>/tests/test_doctor.py:79: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10aadc130>
+  dict(date=d.replace("-", ""), prpr=p) for d, p in sorted(self.closes.items(), reverse=True)
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a317f10>
-  d = dict(zip(self.fieldnames, row))
+<project>/tests/test_doctor.py:79: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e1c7100>
+  dict(date=d.replace("-", ""), prpr=p) for d, p in sorted(self.closes.items(), reverse=True)
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a3a5f30>
-  d = dict(zip(self.fieldnames, row))
+<project>/tests/test_doctor.py:79: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e1c5c60>
+  dict(date=d.replace("-", ""), prpr=p) for d, p in sorted(self.closes.items(), reverse=True)
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a3a46d0>
-  d = dict(zip(self.fieldnames, row))
+<project>/tests/test_doctor.py:79: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e1c5d50>
+  dict(date=d.replace("-", ""), prpr=p) for d, p in sorted(self.closes.items(), reverse=True)
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a3a5120>
-  d = dict(zip(self.fieldnames, row))
+<project>/tests/test_doctor.py:79: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e1c6e30>
+  dict(date=d.replace("-", ""), prpr=p) for d, p in sorted(self.closes.items(), reverse=True)
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a3a6f20>
-  d = dict(zip(self.fieldnames, row))
+<project>/tests/test_doctor.py:79: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e1c6980>
+  dict(date=d.replace("-", ""), prpr=p) for d, p in sorted(self.closes.items(), reverse=True)
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a3a6020>
-  d = dict(zip(self.fieldnames, row))
+<project>/tests/test_doctor.py:79: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e1c6200>
+  dict(date=d.replace("-", ""), prpr=p) for d, p in sorted(self.closes.items(), reverse=True)
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a3a64d0>
-  d = dict(zip(self.fieldnames, row))
+<project>/tests/test_doctor.py:79: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e1c6b60>
+  dict(date=d.replace("-", ""), prpr=p) for d, p in sorted(self.closes.items(), reverse=True)
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
+test_confirmed_route_is_shown_and_a_conflicting_one_is_flagged (test_sgov.DoctorSgovTests.test_confirmed_route_is_shown_and_a_conflicting_one_is_flagged) ... ok
 test_holdings_state_never_counts_qqq_as_the_defensive_holding (test_sgov.DoctorSgovTests.test_holdings_state_never_counts_qqq_as_the_defensive_holding) ... ok
 test_signal_and_holdings_are_shown_apart_and_the_route_probe_is_evidence_only (test_sgov.DoctorSgovTests.test_signal_and_holdings_are_shown_apart_and_the_route_probe_is_evidence_only) ... ok
 test_round_trip_never_routes_through_qqq (test_sgov.EngineSgovTests.test_round_trip_never_routes_through_qqq) ... ok
@@ -504,6 +514,6 @@ test_registered_withdrawal_moves_once_and_unrelated_ones_are_not_tax (test_tax_r
 test_release_only_by_explicit_user_command (test_tax_reserve.WithdrawalTests.test_release_only_by_explicit_user_command) ... ok
 
 ----------------------------------------------------------------------
-Ran 401 tests in 13.041s
+Ran 411 tests in 13.725s
 
 OK

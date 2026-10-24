@@ -59,8 +59,14 @@ UNVERIFIED = [
 
 
 def ensure_schema(db):
+    """Create the table. Commits: call it at command start, never inside a
+    transaction. Every other helper here only reads or writes rows."""
     db.executescript(SCHEMA)
     db.commit()
+
+
+def _has_table(db):
+    return db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='live_checks'").fetchone() is not None
 
 
 def tag(plan_id):
@@ -68,7 +74,8 @@ def tag(plan_id):
 
 
 def _row(journal, plan_id):
-    ensure_schema(journal.db)
+    if not _has_table(journal.db):
+        return None
     row = journal.db.execute("SELECT plan_id, status, plan, evidence, created, updated FROM live_checks "
                              "WHERE plan_id=?", (plan_id,)).fetchone()
     if row is None:
@@ -79,39 +86,74 @@ def _row(journal, plan_id):
 
 def blocking(journal, marker=None):
     """The check that pauses the general run, or None. The marker covers a run
-    started from another state folder on the same account."""
-    ensure_schema(journal.db)
-    row = journal.db.execute(f"SELECT plan_id, status FROM live_checks WHERE status IN "
-                             f"({','.join('?' * len(BLOCKING))})", BLOCKING).fetchone()
-    if row:
-        return {"plan_id": row[0], "status": row[1], "source": "journal"}
-    if marker is not None and Path(marker).exists():
-        try:
-            info = json.loads(Path(marker).read_text())
-        except Exception:
-            info = {}
-        return {"plan_id": info.get("plan_id"), "status": "marker", "source": "account marker"}
-    return None
+    started from another state folder on the same account. A marker whose plan
+    this journal knows never sent anything (planned/superseded) or finished is
+    stale and released."""
+    if _has_table(journal.db):
+        row = journal.db.execute(f"SELECT plan_id, status FROM live_checks WHERE status IN "
+                                 f"({','.join('?' * len(BLOCKING))})", BLOCKING).fetchone()
+        if row:
+            return {"plan_id": row[0], "status": row[1], "source": "journal"}
+    owner = _marker_owner(marker)
+    if owner is None:
+        return None
+    if _stale(journal, owner):
+        _remove_marker(marker)
+        return None
+    return {"plan_id": owner.get("plan_id"), "status": "marker", "source": "account marker"}
 
 
-def _set_marker(marker, plan_id, state):
+def _marker_owner(marker):
+    if marker is None or not Path(marker).exists():
+        return None
+    try:
+        return json.loads(Path(marker).read_text())
+    except Exception:
+        return {"plan_id": None}                       # unreadable: treated as owned by someone else
+
+
+def _stale(journal, owner):
+    row = _row(journal, owner.get("plan_id")) if owner.get("plan_id") else None
+    return row is not None and row["status"] not in BLOCKING
+
+
+def _remove_marker(marker):
+    try:
+        Path(marker).unlink()
+    except FileNotFoundError:
+        pass
+
+
+def claim_marker(marker, plan_id, state_dir, journal):
+    """Account-wide ownership, created exclusively (O_EXCL) next to the account
+    lock so every state folder sees it. Re-claiming one's own marker is a no-op;
+    another plan's marker refuses unless this journal shows it is stale."""
     if marker is None:
         return
-    tmp = Path(str(marker) + ".tmp")
-    tmp.write_text(json.dumps({"plan_id": plan_id, "state_dir": str(state)}))
-    os.chmod(tmp, 0o600)
-    tmp.replace(marker)
+    for _ in range(2):
+        try:
+            fd = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            owner = _marker_owner(marker)
+            if owner.get("plan_id") == plan_id:
+                return
+            if _stale(journal, owner):
+                _remove_marker(marker)
+                continue
+            raise Stop(f"Another live check owns this account (plan {owner.get('plan_id')}, state folder "
+                       f"{owner.get('state_dir')}); finish or stop it there first. Nothing was sent")
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps({"plan_id": plan_id, "state_dir": str(state_dir or "")}))
+            f.flush()
+            os.fsync(f.fileno())
+        return
+    raise Stop("Could not claim the account for the live check; nothing was sent")
 
 
 def _clear_marker(marker, plan_id):
-    if marker is None or not Path(marker).exists():
-        return
-    try:
-        if json.loads(Path(marker).read_text()).get("plan_id") not in (plan_id, None):
-            return
-    except Exception:
-        pass
-    Path(marker).unlink()
+    owner = _marker_owner(marker)
+    if owner is not None and owner.get("plan_id") in (plan_id, None):
+        _remove_marker(marker)
 
 
 # ---- ledger derived from the journal ----
@@ -123,7 +165,8 @@ def ledger(journal, plan):
     budget = money(plan["budget_usd"])
     out = {"budget": budget, "spent": D(0), "reserved": D(0), "proceeds": D(0), "buy_total": D(0),
            "sell_total": D(0), "fee_reserve": D(0), "owned": {s: D(0) for s in SYMBOLS}, "done_steps": [],
-           "open_steps": [], "reserved_by_step": {}, "orders": [], "receipts": [], "unresolved": False}
+           "open_steps": [], "reserved_by_step": {}, "orders": [], "receipts": [], "unresolved": False,
+           "open_cancels": 0}
     for r in journal.rows():
         payload = json.loads(r["payload"] or "{}")
         if payload.get("owner") != owner:
@@ -131,6 +174,7 @@ def ledger(journal, plan):
         if r["kind"] == "cancel":
             if r["status"] in PENDING or r["status"] == PREPARED:
                 out["unresolved"] = True
+                out["open_cancels"] += 1
             continue
         if r["kind"] != "order":
             continue
@@ -239,7 +283,8 @@ def transport_filter(journal, plan_id, routes):
 def create_plan(journal, broker, settings, *, budget, now, tax_reserved_usd, state_dir=None):
     """Read-only checks; stores the plan only if every condition holds.
     Returns (plan or None, reasons)."""
-    ensure_schema(journal.db)
+    if not _has_table(journal.db):
+        ensure_schema(journal.db)
     reasons = []
     try:
         budget = Decimal(str(budget))
@@ -337,14 +382,19 @@ def start(journal, plan_id, now, *, marker=None, state_dir=None):
     account = (journal.meta("broker_key_fingerprint") or "paper")[:16]
     if account != row["plan"]["account"]:
         raise Stop("Plan belongs to a different account")
+    # The account is claimed BEFORE the plan is marked running: a crash in
+    # between leaves a marker of a plan that sent nothing, which is released.
+    claimed = marker is not None and _marker_owner(marker) is None
+    claim_marker(marker, plan_id, state_dir, journal)
     try:
         with journal.atomic():
             journal.db.execute("UPDATE live_checks SET status='running', updated=? WHERE plan_id=? AND status='planned'",
                                (now.isoformat(), plan_id))
             journal.event("live_check_started", {"plan_id": plan_id}, now)
     except Exception as exc:
+        if claimed:
+            _clear_marker(marker, plan_id)
         raise Stop("Another live check is running on this account") from exc
-    _set_marker(marker, plan_id, state_dir)
 
 
 def start_checked(journal, broker, plan_id, now, *, marker=None, state_dir=None):
@@ -411,6 +461,9 @@ def tick(engine, journal, plan_id, now, *, may_trade, may_manage, deadline, sess
     if row is None or row["status"] not in BLOCKING:
         raise Stop("Plan is not running")
     plan = row["plan"]
+    # Account-wide ownership before any request, cancels included (re-claimed if
+    # a crash lost the marker; another plan's marker refuses).
+    claim_marker(marker, plan_id, plan.get("state_dir"), journal)
     engine.owner, engine.strict_reservations = tag(plan_id), True
     engine.live_check = Authorization(journal, plan_id, unwind=unwind)
     engine.cancel_open = row["status"] == "stopping"
@@ -466,6 +519,8 @@ def tick(engine, journal, plan_id, now, *, may_trade, may_manage, deadline, sess
     price = limit_price(quote, step_side, engine.cfg)
     evidence = None
     if step_side == "buy":
+        if tax_reserved_usd is None:
+            raise Stop("New check buys held: tax reserves cannot be checked (own orders are still reconciled)")
         cost = price * (1 + engine.cfg.fee_buffer)
         if cost > led["available"]:
             raise Stop("Live-check budget cannot cover one share with the fee buffer; held (no top-up)")
@@ -490,15 +545,20 @@ def tick(engine, journal, plan_id, now, *, may_trade, may_manage, deadline, sess
             return "waiting: shares become sellable"
 
     def prepared(action):
+        # Runs inside the engine's intent transaction: stored with the intent or not at all.
         if evidence is not None:
-            stored = _row(journal, plan_id)["evidence"]
-            stored[str(step)] = dict(evidence, action=action)
-            journal.db.execute("UPDATE live_checks SET evidence=?, updated=? WHERE plan_id=?",
-                               (json.dumps(stored), now.isoformat(), plan_id))
+            _store_evidence(journal, plan_id, step, dict(evidence, action=action), now)
     return engine._send_order(symbol=step_symbol, side=step_side, qty=D(1), quote=quote, price=price, snap=snap,
                               target=None, signal_date=None, session=session, now=now, deadline=deadline,
                               extra={"owner": tag(plan_id), "step": step, "bid": str(quote.bid), "ask": str(quote.ask)},
                               prepared=prepared)
+
+
+def _store_evidence(journal, plan_id, step, item, now):
+    stored = _row(journal, plan_id)["evidence"]
+    stored[str(step)] = item
+    journal.db.execute("UPDATE live_checks SET evidence=?, updated=? WHERE plan_id=?",
+                       (json.dumps(stored), now.isoformat(), plan_id))
 
 
 def _last_proceeds(journal, plan, step):
@@ -546,7 +606,21 @@ def report(journal, plan_id):
         else:
             item["result"] = "inconclusive: existing cash was enough; needs another check"
     blocking_now = row["status"] in BLOCKING
-    return {"plan_id": plan_id, "status": row["status"], "created": row["created"], "updated": row["updated"],
+    open_orders = [o for o in led["orders"] if o["status"] in PENDING or o["status"] == PREPARED]
+    stop = None
+    if row["status"] == "stopping":
+        if led["open_cancels"]:
+            state = "cancel sent: awaiting confirmation"
+        elif open_orders:
+            state = "requested: own open order not yet cancelled"
+        elif any(led["owned"].values()):
+            state = "requested: no open order; test shares remain (resume --unwind sells only them)"
+        else:
+            state = "requested: no open order, no test shares (ends on the next resume)"
+        stop = {"state": state, "requested_at": row["updated"]}
+    elif row["status"] == "stopped":
+        stop = {"state": "done: no open order, no test shares"}
+    return {"stop": stop,"plan_id": plan_id, "status": row["status"], "created": row["created"], "updated": row["updated"],
             "next_step": led["next_step"] if row["status"] in BLOCKING else None,
             "steps": plan["steps"], "budget_usd": plan["budget_usd"],
             "money_usd": {"allocated": str(led["budget"]), "reserved_open_buys": str(led["reserved"]),

@@ -470,10 +470,18 @@ def live_check_command(args):
         raise Stop("stop needs --plan ID")
     if args.action == "plan" and args.budget_usd is None:
         raise Stop("plan needs --budget-usd (there is no default budget)")
+    journal = Journal(state / "journal.sqlite")
+    try:
+        livecheck.ensure_schema(journal.db)            # outside any transaction
+        if args.action == "stop":
+            # No lock: a running executor holds them and picks the request up on
+            # its next tick; the request and the cancel result are shown apart.
+            livecheck.request_stop(journal, args.plan, datetime.now(timezone.utc))
+    finally:
+        journal.db.close()
     if args.action == "status":
         journal = Journal(state / "journal.sqlite")
         try:
-            livecheck.ensure_schema(journal.db)
             ids = [args.plan] if args.plan else [r[0] for r in journal.db.execute(
                 "SELECT plan_id FROM live_checks ORDER BY created DESC LIMIT 5")]
             output({"live_checks": [livecheck.report(journal, i) for i in ids],
@@ -481,12 +489,18 @@ def live_check_command(args):
         finally:
             journal.db.close()
         return 0
+    if args.action == "stop" and not args.confirm_live:
+        return _stop_report(state, args.plan, "cancel not sent by this command: a running execute/resume "
+                            "cancels it on its next tick, or run stop/resume with --confirm-live")
     load_env(Path(args.config).resolve().parent / "secrets.env")
     with open(state / "run.lock", "a") as lock, open(account_lock_path(cfg), "a") as account:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             fcntl.flock(account, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
+            if args.action == "stop":
+                return _stop_report(state, args.plan, "a running execute/resume holds the account and cancels "
+                                    "on its next tick")
             raise Stop("Another process is working on this account; nothing was sent") from None
         journal = Journal(state / "journal.sqlite")
         try:
@@ -495,18 +509,22 @@ def live_check_command(args):
             journal.db.close()
 
 
+def _stop_report(state, plan_id, note):
+    journal = Journal(state / "journal.sqlite")
+    try:
+        data = dict(livecheck.report(journal, plan_id), note=note)
+    finally:
+        journal.db.close()
+    livecheck.write_report(state, plan_id, data)
+    output(data)
+    return 0
+
+
 def live_check_locked(args, cfg, state, settings, journal):
     from .core import Locked, UnknownOutcome
     now = datetime.now(timezone.utc)
     marker = account_marker_path(cfg)
-    livecheck.ensure_schema(journal.db)
-    if args.action == "stop":
-        livecheck.request_stop(journal, args.plan, now)
-        data = livecheck.report(journal, args.plan)
-        livecheck.write_report(state, args.plan, data)
-        output(data)
-        return 0
-    live = args.action in ("execute", "resume")
+    live = args.action in ("execute", "resume", "stop")
     client = Client(state, allow_mutations=live)
     if args.action == "plan":
         broker = Meritz(client, journal, settings.instrument_markets)
@@ -521,7 +539,7 @@ def live_check_locked(args, cfg, state, settings, journal):
         raise Stop("Unknown live-check plan")
     if args.action == "execute" and row["status"] != "planned":
         raise Stop(f"Plan is {row['status']}; execute accepts a fresh plan only")
-    if args.action == "resume" and row["status"] not in livecheck.BLOCKING:
+    if args.action in ("resume", "stop") and row["status"] not in livecheck.BLOCKING:
         raise Stop(f"Plan is {row['status']}; nothing to resume (a new plan is needed for new trades)")
     client.mutation_filter = livecheck.transport_filter(journal, args.plan, row["plan"]["routes"])
     broker = Meritz(client, journal, settings.instrument_markets)
@@ -540,10 +558,13 @@ def live_check_locked(args, cfg, state, settings, journal):
             market = confirm_regular_session(schedule, broker.market_status, now) if session_row else None
             may_manage = bool(market and market["regular"])
             may_trade = schedule.execution_window(now) and may_manage
+            try:
+                reserved = tax_reserved_usd(journal, cfg, now)
+            except Stop:
+                reserved = None          # unknown reserve: own orders still settle, new buys hold
             result = livecheck.tick(engine, journal, args.plan, now, may_trade=may_trade, may_manage=may_manage,
                                     deadline=schedule.execution_deadline(now) if may_trade else None,
-                                    session=schedule.session_key(now),
-                                    tax_reserved_usd=tax_reserved_usd(journal, cfg, now), marker=marker,
+                                    session=schedule.session_key(now), tax_reserved_usd=reserved, marker=marker,
                                     unwind=bool(args.unwind))
             results.append({"at": now.isoformat(), "result": result})
             done = set(livecheck.ledger(journal, row["plan"])["done_steps"])

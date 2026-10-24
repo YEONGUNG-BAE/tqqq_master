@@ -175,6 +175,7 @@ TQQQ·QQQ·QQQM·BRK.B는 기존 경로를 그대로 쓰며, 사용자 설정으
 .venv/bin/python -m autotrader live-check execute --config config.json --plan <계획ID> --confirm-live
 .venv/bin/python -m autotrader live-check resume --config config.json --plan <계획ID> --confirm-live
 .venv/bin/python -m autotrader live-check stop --config config.json --plan <계획ID>
+.venv/bin/python -m autotrader live-check stop --config config.json --plan <계획ID> --confirm-live
 .venv/bin/python -m autotrader live-check resume --config config.json --plan <계획ID> --confirm-live --unwind
 ```
 
@@ -191,6 +192,7 @@ TQQQ·QQQ·QQQM·BRK.B는 기존 경로를 그대로 쓰며, 사용자 설정으
   - 정규장 확인과 개장 1~15분 실행창에서만 신규 주문을 냅니다. 호가 신선도·스프레드·방향별 수량 단위·매도 전용·거래정지·예약주문 전체 조회·주문 상한·백오프는 일반 엔진과 같습니다.
   - 각 단계는 이전 주문의 체결이 확정되고 잔고에 반영된 뒤에만 진행합니다.
   - 실행창이 끝나면 상태를 저장하고 멈춥니다. 다음 실행창에 `resume`으로 이어갑니다. 상태 대조는 실행창 밖에서도 합니다.
+  - 세금 계획을 읽을 수 없으면 신규 검증 매수만 보류합니다. 이미 보낸 주문의 조회·체결 대조·허용된 취소와 검증 보유 매도는 계속합니다.
   - 끝난 계획(completed·stopped)은 다시 거래하지 않습니다. 새 거래에는 새 계획이 필요합니다.
 - **권한 범위**
   - 계획에 없는 종목·수량·방향·단계, 예산 초과, 다른 주문의 취소는 세 곳에서 막습니다: 주문 의도 저장 전, HTTP 전송 직전, 전송 계층.
@@ -199,11 +201,14 @@ TQQQ·QQQ·QQQM·BRK.B는 기존 경로를 그대로 쓰며, 사용자 설정으
   - 가용금 = 예산 − 확정 매수액(수수료 여유 포함) − 미체결 매수 예약 + 확정 매도대금(수수료 여유 차감).
   - 계좌에 USD가 더 있거나 중간에 입금·배당이 생겨도 늘어나지 않습니다. 같은 체결을 두 번 세지 않습니다.
   - 예산은 자금 한도일 뿐, 손실 상한이나 갭 위험 보장이 아닙니다.
-- **일반 run과의 관계**
+- **일반 run과의 관계·계좌 소유권**
   - 검증이 진행 중이거나 중단 뒤 테스트 보유가 남아 있으면, 일반 `run`은 아무 요청도 보내지 않고 보류로 끝납니다.
-  - 계좌 잠금 폴더에 표시 파일을 두므로, 다른 `state_dir`에서 실행한 `run`도 멈춥니다.
+  - 계좌 잠금 폴더에 표시 파일을 배타적으로 만들어 계좌 소유권을 잡습니다. 다른 `state_dir`의 `run`도 멈추고, 다른 `state_dir`의 검증도 시작·재개할 수 없습니다.
+  - 시작할 때는 표시 파일을 먼저 잡고 그다음 시작 상태를 저장합니다. 그 사이에 꺼지면 아무것도 보내지 않은 계획의 표시 파일이므로 자동으로 풀립니다. 진행 중인 계획에 표시 파일이 없으면 요청 전에 다시 잡습니다.
 - **stop**
-  - 신규 검증 주문을 멈추고, 다음 `resume`에서 자기 미체결만 취소합니다.
+  - 잠금 없이 중단 요청만 저장합니다. 그래서 실행 중인 `execute`/`resume`이 계좌를 잡고 있어도 바로 전달되고, 실행 중인 명령이 다음 회차에 자기 미체결을 조회·취소합니다.
+  - 실행 중인 명령이 없으면 `stop --confirm-live`(또는 `resume --confirm-live`)가 취소를 보냅니다. `--confirm-live` 없이 실행한 `stop`은 취소를 보내지 않았다고 표시합니다.
+  - 보고서의 `stop.state`는 중단 요청과 취소 확정을 구분합니다: 미체결 취소 전 / 취소 전송·확인 대기 / 테스트 보유 남음 / 완료.
   - 테스트 보유가 남으면 일반 run 정지를 유지합니다. `--unwind`로 그 1주만 팔아야 정리됩니다.
   - 결과 불명 상태는 지우지 않고, 자동 청산도 하지 않습니다.
 - **기록**
