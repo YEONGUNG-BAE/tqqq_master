@@ -281,7 +281,7 @@ def _symbol(row):
     return row.get("ovrs_stck_symb_iscd") or str(row.get("iscd", "")).rsplit(".", 1)[0]
 
 
-def sync(db, broker, sessions, now, start="00000000"):
+def sync(db, broker, sessions, now, start="00000000", on_ledger=None):
     """Pull completed fills, fees, dividends and settlement FX rates into the ledger.
 
     Only fills from US sessions that have already ended are recorded, so an order
@@ -318,6 +318,8 @@ def sync(db, broker, sessions, now, start="00000000"):
                                   "trade_date": trade_date, "settle_date": settle, "settle_source": settle_source,
                                   "source": "broker_history"}, now)
     ledger = list(broker.transactions(start, last))
+    if on_ledger is not None:
+        on_ledger(ledger)
     trades = [t for t in ledger if str(t.get("tr_type_code")) in ("05", "06") and str(t.get("cncl_yn", "N")) != "Y"]
     for fill_key, symbol, side, qty, trade_date, settle in db.execute(
             "SELECT fill_key, symbol, side, qty, trade_date, settle_date FROM tax_fills WHERE fee IS NULL").fetchall():

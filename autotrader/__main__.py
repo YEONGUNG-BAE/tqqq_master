@@ -13,6 +13,7 @@ from .history import refresh
 from .meritz import AuthError, Client, Meritz
 from .notify import Notifier, default_channels, scrub, secret_values
 from . import tax, telegram_bot
+from .tax_reserve import TaxPlan
 from .paper import Paper
 from .schedule import KST, Schedule, confirm_regular_session
 
@@ -152,14 +153,65 @@ def tax_notices(journal, notifier, settings, now):
     journal.put_meta("tax_notice:" + code, now.isoformat())
 
 
+def make_plan(journal, cfg, now):
+    """Tax plan bound to this journal: estimates from the ledger, a recent base
+    rate (at most 10 days old) for conservative USD valuation."""
+    settings = tax.TaxSettings.from_config(cfg.get("tax"))
+    tax.ensure_schema(journal.db)
+
+    def estimate(year):
+        return tax.estimate(journal.db, settings, year, holdings=journal.meta("last_positions"))
+
+    def rate():
+        info = journal.meta("last_usd_rate") or {}
+        try:
+            fresh = now - datetime.fromisoformat(info["at"]) <= timedelta(days=10)
+        except (KeyError, ValueError, TypeError):
+            return None
+        return info.get("rate") if fresh else None
+    plan = TaxPlan(journal.db, cfg.get("tax"), estimate, rate)
+
+    def blockers(year):
+        est = estimate(year)
+        broker_pl = journal.meta(f"broker_pl:{year}")
+        comparison = tax.compare_with_broker(est["account_net_krw"], broker_pl) if broker_pl is not None else None
+        return tax.tax_sell_blockers(est, comparison)
+    return settings, plan, blockers
+
+
+def plan_notices(journal, notifier, plan, now):
+    year = TaxPlan.due_year(now)
+    if year is None:
+        return
+    st = plan.status(year, now)
+    deadline = (st["deadline"] or "미설정") + ("" if st["deadline_verified"] else " (미검증)")
+    remaining = st["account_need"] - st["paid"] - st["withdrawn"]
+    if st["account_need"] > 0 and remaining > 0 and st["reserve_krw"] >= remaining:
+        notifier.send("tax", f"transfer:{year}", f"{year}년 귀속 세금 원화 준비가 끝났습니다. 납부 기한: {deadline}. "
+                      "은행 이체와 신고·납부는 직접 하세요.", now, amounts=[("transfer", remaining)])
+    need = journal.meta("reverse_fx_needed") or {}
+    if need.get("year") == year:
+        notifier.send("tax", f"reverse_fx:{year}", "달러 준비금은 재투자하지 않고 묶어 두었습니다. 달러→원화 환전은 "
+                      "실계좌 검증 전이라 실행하지 않았습니다. 원화 환전이 필요합니다.", now,
+                      amounts=[("reserve_usd_krw", st["reserve_usd_krw"] or 0), ("shortfall", st["shortfall"])])
+    if st["external"]["overdue"]:
+        notifier.send("tax", f"external_overdue:{year}:{st['external']['date']}",
+                      "외부 납부 재원 예정일이 지났지만 확보 입력이 없습니다. 미확보분은 계좌에서 마련할 부족분으로 계산합니다.",
+                      now, amounts=[("external_planned", st["external"]["planned"]), ("shortfall", st["shortfall"])])
+    held = journal.meta(f"tax_plan_only:{year}:{now.astimezone(timezone.utc).date()}")
+    if held:
+        notifier.send("tax", f"tax_hold:{year}:{now.astimezone(KST).date()}", "세금 목적 매도는 보류하고 관찰 계획만 "
+                      "남겼습니다(전략 매매는 영향 없음). 사유: " + "; ".join(held["reasons"]), now,
+                      amounts=[("installment_due", held["due"])])
+
+
 def housekeeping(journal, notifier, cfg, broker, schedule, now):
     """After the trading tick: tax ledger sync (daily, US market closed), tax
     notices and Telegram commands. Every failure here is recorded and ignored;
     none of it can change trading state or send a financial request."""
     tax_cfg = cfg.get("tax", {}) or {}
     try:
-        settings = tax.TaxSettings.from_config(tax_cfg)
-        tax.ensure_schema(journal.db)
+        settings, plan, _ = make_plan(journal, cfg, now)
     except Exception as exc:
         journal.event("tax_failed", {"stage": "settings", "error_type": type(exc).__name__}, now)
         return
@@ -168,14 +220,30 @@ def housekeeping(journal, notifier, cfg, broker, schedule, now):
         info = journal.meta("tax_sync") or {}
         if info.get("day") != day:
             try:
+                unlinked = []
+
+                def ledger(rows):
+                    unlinked.extend(plan.match_withdrawals(rows, now)[1])
                 result = tax.sync(journal.db, broker, [s[0] for s in schedule.sessions], now,
-                                  str(tax_cfg.get("ledger_start", "00000000")))
-                journal.put_meta("tax_sync", dict(result, day=day, ok=True))
+                                  str(tax_cfg.get("ledger_start", "00000000")), on_ledger=ledger)
+                for year in {now.astimezone(KST).year, now.astimezone(KST).year - 1}:
+                    value = broker.realized_pl_krw(f"{year}0101", f"{year}1231")
+                    if value is not None:
+                        journal.put_meta(f"broker_pl:{year}", str(value))
+                rate = broker.base_rate(now.astimezone(KST).strftime("%Y%m%d"))
+                if rate is not None:
+                    journal.put_meta("last_usd_rate", {"rate": str(rate), "at": now.isoformat()})
+                journal.put_meta("tax_sync", dict(result, day=day, ok=True, unlinked_withdrawals=len(unlinked)))
             except Exception as exc:
                 journal.put_meta("tax_sync", {"day": day, "ok": False,
                                               "error": str(exc) if isinstance(exc, Stop) else type(exc).__name__})
+    lines, line_now = telegram_bot.plan_lines(plan)
+    line_now[0] = now
     for step in (lambda: tax_notices(journal, notifier, settings, now),
-                 lambda: telegram_bot.poll(journal, settings, now) if cfg.get("notifications", True) else 0):
+                 lambda: plan_notices(journal, notifier, plan, now),
+                 lambda: telegram_bot.poll(journal, settings, now, extra_lines=lines,
+                                           handlers=telegram_bot.plan_handlers(plan))
+                 if cfg.get("notifications", True) else 0):
         try:
             step()
         except Exception as exc:
@@ -253,6 +321,8 @@ def run_locked(cfg, state, settings):
         # Reads can be slow: quote freshness and the window are re-checked against
         # the wall clock right before a request is sent.
         engine.clock = lambda: datetime.now(timezone.utc)
+        _, engine.tax_plan, engine.tax_blockers_fn = make_plan(journal, cfg, now)
+        engine.reverse_fx_verified = (cfg.get("verified") or {}).get("reverse_fx") is True
         signal = signal or {"target": None, "signal_date": None}
         result = engine.tick(target=signal["target"], signal_date=signal["signal_date"], signal_error=signal_error,
                              expected_signal_date=expected, session=session_key,
@@ -446,7 +516,12 @@ def tax_command(args):
         years = [now.year] if now.month > 5 else [now.year - 1, now.year]
         report = {str(y): tax.estimate(journal.db, settings, y, holdings=journal.meta("last_positions"))
                   for y in years}
-        output({"estimates": report, "sync": journal.meta("tax_sync")})
+        _, plan, blockers = make_plan(journal, cfg, now)
+        plan_year = TaxPlan.due_year(now) or now.astimezone(KST).year
+        status = plan.status(plan_year, now)
+        status.pop("estimate", None)
+        output({"estimates": report, "plan": status, "tax_sell_blockers": blockers(plan_year),
+                "sync": journal.meta("tax_sync")})
     finally:
         journal.db.close()
     return 0
@@ -482,8 +557,12 @@ def telegram_command(args):
     load_env(Path(args.config).resolve().parent / "secrets.env")
     journal = Journal(state / "journal.sqlite")
     try:
-        output({"processed": telegram_bot.poll(journal, tax.TaxSettings.from_config(cfg.get("tax")),
-                                               datetime.now(timezone.utc))})
+        now = datetime.now(timezone.utc)
+        settings, plan, _ = make_plan(journal, cfg, now)
+        lines, line_now = telegram_bot.plan_lines(plan)
+        line_now[0] = now
+        output({"processed": telegram_bot.poll(journal, settings, now, extra_lines=lines,
+                                               handlers=telegram_bot.plan_handlers(plan))})
     finally:
         journal.db.close()
     return 0

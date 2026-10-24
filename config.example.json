@@ -27,12 +27,17 @@
   "tax": {
     "basic_deduction_krw": 2500000,
     "rate": "0.22",
-    "ledger_start": "00000000"
+    "ledger_start": "00000000",
+    "payment_deadline": null,
+    "payment_deadline_verified": false,
+    "settlement_buffer_days": 7,
+    "installment_day": 15
   },
   "verified": {
     "split_only_data": false,
     "usd_buying_power_and_fees": false,
     "partial_fill_cancel": false,
-    "open_window_execution": false
+    "open_window_execution": false,
+    "reverse_fx": false
   }
 }

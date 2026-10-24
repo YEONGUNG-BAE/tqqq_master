@@ -53,6 +53,20 @@ class Paper:
         self.fx_history.append({"ref": str(number), "krw": str(krw), "usd": str(usd), "at": quote.at.isoformat()})
         return {"number": number, "ref": str(number), "usd_after": str(self.usd)}
 
+    def fx_quote_sell(self, now):
+        return FXQuote(D("1400"), D("1400"), now, now.isoformat())
+
+    def exchange_to_krw(self, usd, quote):
+        self._sending()
+        self.calls.append(("fx_out", usd))
+        krw = (usd * quote.ask).quantize(D(1))
+        self.usd -= usd
+        self.krw += krw
+        number = len(self.calls)
+        self.fx_history.append({"ref": str(number), "krw": str(krw), "usd": str(usd), "at": quote.at.isoformat(),
+                                "direction": "out"})
+        return {"number": number, "ref": str(number), "krw": str(krw)}
+
     def order(self, symbol, side, qty, price, now):
         self._sending()
         self.calls.append((side, symbol, qty))
@@ -100,7 +114,11 @@ class Paper:
         if kind == "fx":
             return [{"ref": e["ref"], "usd": e["usd"], "krw": e["krw"]} for e in self.fx_history
                     if datetime.fromisoformat(e["at"]) >= floor and e["ref"] not in tracked["fx"]
-                    and D(e["krw"]) <= D(payload.get("krw", "0"))]
+                    and e.get("direction") != "out" and D(e["krw"]) <= D(payload.get("krw", "0"))]
+        if kind == "fx_out":
+            return [{"ref": e["ref"], "usd": e["usd"], "krw": e["krw"]} for e in self.fx_history
+                    if datetime.fromisoformat(e["at"]) >= floor and e["ref"] not in tracked["fx"]
+                    and e.get("direction") == "out" and D(e["usd"]) == D(payload.get("usd", "0"))]
         if kind == "cancel":
             original = payload.get("original", {})
             return [{"number": c["number"], "date": original.get("date"), "original": original}

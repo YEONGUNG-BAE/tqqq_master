@@ -281,10 +281,11 @@ class Meritz:
         waiting on none. Every page must arrive or this raises Stop."""
         floor = created - timedelta(seconds=CLOCK_SKEW_SECONDS)
         first, last = created.astimezone(KST).strftime("%Y%m%d"), datetime.now(KST).strftime("%Y%m%d")
-        if kind == "fx":
+        if kind in ("fx", "fx_out"):
+            direction = "1" if kind == "fx" else "2"
             result = []
             for r in self.fx_history(first, last):
-                if str(r.get("mnec_clcd")) != "1" or r.get("crcd") != "USD":
+                if str(r.get("mnec_clcd")) != direction or r.get("crcd") != "USD":
                     continue
                 if str(r.get("chan_type_cls_code", "120")) != "120" or str(r.get("rspn_cntt", "정상")).strip() != "정상":
                     continue
@@ -293,8 +294,13 @@ class Meritz:
                 except (KeyError, ValueError):
                     at = None
                 ref = f"{r.get('aplt_date')}:{r.get('aplt_srno')}"
-                krw, requested = money(r.get("tr_amt", 0)), money(payload["krw"])
-                if (at is None or at >= floor) and ref not in tracked["fx"] and requested * D("0.99") <= krw <= requested + 1:
+                krw = money(r.get("tr_amt", 0))
+                if kind == "fx":
+                    requested = money(payload["krw"])
+                    fits = requested * D("0.99") <= krw <= requested + 1
+                else:
+                    fits = abs(money(r.get("frcr_tr_amt", 0)) - money(payload["usd"])) <= D("0.001")
+                if (at is None or at >= floor) and ref not in tracked["fx"] and fits:
                     result.append({"ref": ref, "usd": str(money(r.get("frcr_tr_amt", 0))), "krw": str(krw),
                                    "rate": str(r.get("aply_exrt"))})
             return result
@@ -569,6 +575,36 @@ class Meritz:
                        "discount_pct": str(r.get("dcrt")), "grade_name": r.get("cust_grad_code_name"),
                        "preference": r.get("prft_aply_cls_val"),
                        "spread_ratio": str(((quote.ask - base) / base).quantize(D("0.000001"))) if base > 0 else None}
+
+    def fx_quote_sell(self, now):
+        """Customer-applied USD->KRW rate (mnec_clcd 2): the applied SELL rate."""
+        r = self._get("/forex/v1/rates/applied", crcd="USD", mnec_clcd="2")
+        at = datetime.strptime(r["exrt_stnd_time"], "%Y%m%d%H%M%S").replace(tzinfo=KST)
+        mid = (money(r["tltr_byrt"]) + money(r["tltr_slrt"])) / 2
+        return FXQuote(money(r["tltr_aply_slrt"]), mid, at, r["exrt_stnd_time"])
+
+    def exchange_to_krw(self, usd, quote):
+        """Spec: POST /forex/v1/exchanges with mnec_clcd 2 sells foreign currency;
+        frcr_amt carries the USD amount (3 decimals) and wncr_amt is 0. Not yet
+        verified on the real account: the engine runs it only when
+        verified.reverse_fx is true."""
+        response = self.client.call("POST", "/forex/v1/exchanges", body=dict(
+            mnec_clcd="2", wncr_amt=0, frcr_amt=str(D(usd).quantize(D("0.001"))), crcd="USD",
+            exrt_stnd_time=quote.server_time, iqry_exrt=str(quote.ask)), success=("0000",))
+        r = response["data"]
+        if money(r["tr_amt"]) <= 0 or money(r["frcr_tr_amt"]) <= 0:
+            raise UnknownOutcome("Unexpected FX receipt")
+        return {"number": r["tr_srno"], "krw": str(money(r["tr_amt"])), "krw_after": str(r.get("tfam_nwrm")), "raw": r}
+
+    def realized_pl_krw(self, first, last):
+        """Broker realized P/L total (KRW) for reference anomaly checks only."""
+        response = self.client.call("GET", "/accounts/v1/me/overseas/profit-loss", query=dict(
+            oder_sta_date=first, oder_fin_date=last, ctcd="840"), success=("5762", "5766", "5820"), allow_paginated=True)
+        summary = response.get("summary") or {}
+        if isinstance(summary, list):
+            summary = summary[0] if summary else {}
+        value = summary.get("rlzt_prls_amt")
+        return None if value in (None, "") else money(str(value).replace(",", ""))
 
     def exchange(self, krw, quote):
         response = self.client.call("POST", "/forex/v1/exchanges", body=dict(

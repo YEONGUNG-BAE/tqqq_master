@@ -388,6 +388,11 @@ class Engine:
         self.run_id = str(uuid4())
         self.rng = random.Random()
         self.clock = None   # wall clock for checks made late in a run; None = use the tick's `now`
+        # Tax reserve plan (stage 3). None = no tax behaviour (paper replay, tests).
+        self.tax_plan = None
+        self.tax_blockers_fn = lambda year: []
+        self.reverse_fx_verified = False
+        self.last_action_id = None
 
     def _current(self, now):
         """Time for freshness and window checks made after slow reads. Never earlier
@@ -437,7 +442,7 @@ class Engine:
 
     # ---- sending ----
 
-    def _submit(self, kind, payload, now, session, call, guard=None):
+    def _submit(self, kind, payload, now, session, call, guard=None, prepared=None, abandoned=None):
         if self.cfg.mode == "observe":
             self.j.event("plan", dict(kind=kind, **payload), now)
             return "observe: " + kind
@@ -448,6 +453,10 @@ class Engine:
         action = self.j.create(kind, payload, now, session, status=PREPARED, attempt=attempt, run_id=self.run_id,
                                account=(self.j.meta("broker_key_fingerprint") or "paper")[:16],
                                target_version=f"{payload.get('signal_date')}:{target}" if target else None)
+        if prepared is not None:
+            # Reserve money for this request BEFORE it can leave, so a lost reply
+            # can never leave the money counted twice.
+            prepared(action)
 
         def mark_sending():
             # Runs after token issue and call pacing, immediately before the HTTP
@@ -471,17 +480,25 @@ class Engine:
             receipt = call()
         except Aborted as exc:
             self.j.update(action, NOT_SENT, result={"reason": "aborted before send: " + str(exc)})
+            if abandoned is not None:
+                abandoned(action)
             return "idle: " + str(exc)
         except NotSent as exc:
             self.j.update(action, NOT_SENT, result={"reason": str(exc)})
+            if abandoned is not None:
+                abandoned(action)
             self._register_failure(now, "not sent: " + str(exc))
             raise
         except Refused as exc:
             self.j.update(action, REFUSED, result={"code": exc.code, "reason": str(exc)})
+            if abandoned is not None:
+                abandoned(action)
             self._register_failure(now, "refused: " + str(exc))
             raise
         except Rejected as exc:
             self.j.update(action, REJECTED, result={"reason": str(exc)})
+            if abandoned is not None:
+                abandoned(action)
             set_lock(self.j, "broker_warning", "Broker rejected action " + action + ": " + str(exc), now,
                      action=action, required="Read the warning in the broker app; the bot never acknowledges warnings")
             raise
@@ -489,6 +506,8 @@ class Engine:
             if self.j.status(action) == PREPARED:
                 # Failed before the send-start record (e.g. token issue): never transmitted.
                 self.j.update(action, NOT_SENT, result={"error_type": type(exc).__name__})
+                if abandoned is not None:
+                    abandoned(action)
                 self._register_failure(now, "not sent: " + type(exc).__name__)
                 raise NotSent("Request not sent: " + (str(exc) if isinstance(exc, Stop) else type(exc).__name__)) from exc
             # A timeout, malformed JSON, programming exception or crash after the
@@ -503,6 +522,7 @@ class Engine:
             if hook is not None:
                 hook(None)
         self.j.update(action, ACCEPTED, receipt=receipt, broker_ref=_ref(receipt))
+        self.last_action_id = action
         self._clear_failures()
         return "submitted: " + kind
 
@@ -516,7 +536,7 @@ class Engine:
             receipt = json.loads(r["receipt"])
             if r["kind"] in ("order", "cancel") and "number" in receipt and "date" in receipt:
                 refs["orders"].add((str(receipt["date"]), int(receipt["number"])))
-            if r["kind"] == "fx" and receipt.get("ref") is not None:
+            if r["kind"] in ("fx", "fx_out") and receipt.get("ref") is not None:
                 refs["fx"].add(str(receipt["ref"]))
         return refs
 
@@ -611,6 +631,21 @@ class Engine:
                 return self._resolve_unknown(row, now)
         for row in pending:
             payload, receipt = json.loads(row["payload"]), json.loads(row["receipt"])
+            if row["kind"] == "fx_out":
+                # USD->KRW for tax: wait until the KRW is visible, then move the
+                # USD reserve to the KRW reserve exactly once.
+                received = money(receipt.get("krw", "0"))
+                if snap.krw + 1 < money(payload["krw_before"]) + received:
+                    if self._persisting("reflect:" + row["id"], now, self.cfg.inconsistency_lock_minutes):
+                        self._lock("fx_not_reflected", f"Reverse FX {row['id']} accepted but KRW never reflected it",
+                                   now, row["id"], required="Compare the FX history with balances in the broker app")
+                    return "waiting: reverse FX balance reflection"
+                self._forget("reflect:" + row["id"])
+                self.j.update(row["id"], DONE, result={"balance_confirmed": True})
+                if self.tax_plan is not None:
+                    self.tax_plan.finish_fx_out(row["id"], money(payload["usd"]), received, now)
+                    self.j.db.commit()
+                continue
             if row["kind"] == "fx":
                 # Require balance reflection before anything else. Balances are
                 # never used to guess a lost receipt; that is _resolve_unknown's job.
@@ -664,6 +699,10 @@ class Engine:
                 self.j.update(row["id"], DONE, filled=str(filled),
                               result={"filled": str(filled), "state": status.state, "raw": status.raw})
                 self._switch_fill(row, payload, filled, status.state, now)
+                if payload.get("tax_year") and self.tax_plan is not None:
+                    # Conservative: a sell fills at or above its limit; fee buffer deducted.
+                    self.tax_plan.finish_sell(row["id"], filled * money(payload["price"]) * (1 - self.cfg.fee_buffer), now)
+                    self.j.db.commit()
                 if status.state == "rejected":
                     self._lock("order_rejected_after_acceptance", "Accepted order later rejected; review " + row["id"],
                                now, row["id"], required="Read the rejection reason in the broker app")
@@ -804,7 +843,13 @@ class Engine:
         price, side, symbol = money(payload["price"]), payload["side"], payload["symbol"]
         if side == "sell" and symbol in intent["from"]:
             # Conservative: a sell fills at or above its limit; fee buffer deducted.
-            intent["proceeds"] = str(money(intent["proceeds"]) + filled * price * (1 - self.cfg.fee_buffer))
+            value = filled * price * (1 - self.cfg.fee_buffer)
+            year = self._tax_year(now)
+            if year is not None and value > 0:
+                # The installment gap comes out of the switch proceeds; no separate tax sell.
+                value -= self.tax_plan.earmark_proceeds(year, value, now)
+                self.j.db.commit()
+            intent["proceeds"] = str(money(intent["proceeds"]) + value)
         elif side == "buy" and symbol == intent["to"]:
             # Conservative: a buy fills at or below its limit; fee buffer added.
             intent["spent"] = str(money(intent["spent"]) + filled * price * (1 + self.cfg.fee_buffer))
@@ -828,7 +873,7 @@ class Engine:
             self.j.event("switch_done", {"id": intent["id"], "to": target, "how": how}, now)
 
     def _send_order(self, *, symbol, side, qty, quote, price, snap, target, signal_date, session, now,
-                    deadline, extra=None):
+                    deadline, extra=None, prepared=None, abandoned=None):
         if self._past(deadline, now):
             return "idle: execution window closed during this run"
         payload = dict(symbol=symbol, side=side, qty=str(qty), price=str(price),
@@ -844,7 +889,8 @@ class Engine:
             except Stop as exc:
                 raise Aborted("quote no longer valid at send time: " + str(exc)) from exc
         return self._submit("order", payload, sent_at, session,
-                            lambda: self.broker.order(symbol, side, qty, price, sent_at), order_guard)
+                            lambda: self.broker.order(symbol, side, qty, price, sent_at), order_guard,
+                            prepared, abandoned)
 
     def _recover(self, snap, target, signal_date, session, now, deadline):
         """Same-session completion of a confirmed switch after the open window."""
@@ -884,7 +930,9 @@ class Engine:
         price = limit_price(quote, side, self.cfg)
         if side == "buy":
             budget = self._budget(intent)
-            qty = buy_quantity(min(snap.usd, budget), snap.buying_power, price, self.cfg)
+            reserved_usd = self._reserved(now)[1]
+            qty = buy_quantity(min(max(D(0), snap.usd - reserved_usd), budget),
+                               max(D(0), snap.buying_power - reserved_usd), price, self.cfg)
             if qty < 1:
                 if buy_quantity(budget, budget, price, self.cfg) >= 1:
                     return "waiting: sale proceeds not yet orderable"
@@ -896,6 +944,109 @@ class Engine:
         return self._send_order(symbol=symbol, side=side, qty=qty, quote=quote, price=price, snap=snap,
                                 target=target, signal_date=signal_date, session=session, now=now,
                                 deadline=deadline, extra={"recovery": True, "switch": intent["id"]})
+
+    # ---- tax reserve (stage 3) ----
+
+    def _tax_year(self, now):
+        if self.tax_plan is None:
+            return None
+        from .tax_reserve import TaxPlan
+        return TaxPlan.due_year(now)
+
+    def _reserved(self, now):
+        if self.tax_plan is None:
+            return D(0), D(0)
+        return self.tax_plan.reserved(now)
+
+    def _secure_cash(self, snap, now, locked):
+        """Earmark unreserved cash for the current installment (no request sent)."""
+        year = self._tax_year(now)
+        if year is None or locked:
+            return
+        krw, usd = self._reserved(now)
+        self.tax_plan.allocate_cash(year, max(D(0), snap.krw - self.cfg.krw_reserve - krw),
+                                    max(D(0), snap.usd - self.cfg.usd_reserve - usd), now)
+        self.j.db.commit()
+
+    def _tax_sell(self, snap, target, signal_date, session, now, deadline):
+        """A whole-share sell of the held strategy symbol for the installment gap,
+        only when every independent budget check passes. Otherwise the plan is
+        recorded and only tax work waits."""
+        year = self._tax_year(now)
+        if year is None:
+            return None
+        intent = self.j.meta("switch_intent")
+        if intent and intent["status"] not in ("done", "superseded"):
+            return None                     # switches first: never delayed by tax work
+        held = min(snap.positions.get(target, D(0)), snap.sellable.get(target, D(0)))
+        status = self.tax_plan.status(year, now)
+        if status["installment_due"] <= 0 or held < 1:
+            return None
+        quote = self.broker.quote(target, self._current(now))
+        check_quote(quote, self._current(now), self.cfg)
+        price = limit_price(quote, "sell", self.cfg)
+        plan, reasons, status = self.tax_plan.sell_plan(year, now, price, held, self.cfg.fee_buffer,
+                                                         self.tax_blockers_fn(year))
+        if plan is None:
+            key = f"tax_plan_only:{year}:{now.astimezone(UTC).date()}"
+            if self.j.meta(key) is None:
+                self.j.put_meta(key, {"reasons": reasons, "due": str(status["installment_due"])})
+                self.j.event("tax_plan_only", {"year": year, "reasons": reasons}, now)
+            return None
+        def prepared(action):
+            self.tax_plan.start(year, action, "sell", plan["proceeds_krw"], plan["qty"] * price, now)
+            self.j.db.commit()
+
+        def abandoned(action):
+            self.tax_plan.cancel_progress(action)
+            self.j.db.commit()
+        return self._send_order(symbol=target, side="sell", qty=plan["qty"], quote=quote, price=price, snap=snap,
+                                target=target, signal_date=signal_date, session=session, now=now, deadline=deadline,
+                                extra={"tax_year": year, "tax_basis": plan["basis"],
+                                       "rounding_excess_krw": str(plan["rounding_excess_krw"])},
+                                prepared=prepared, abandoned=abandoned)
+
+    def _reverse_fx(self, snap, session, now, fx_deadline):
+        """USD reserve -> KRW reserve, only once the reverse direction is verified
+        on the real account. Until then the USD stays reserved and the need is
+        recorded for notification."""
+        year = self._tax_year(now)
+        if year is None:
+            return None
+        status = self.tax_plan.status(year, now)
+        usd = min(status["reserve_usd"], snap.cash_usd if snap.cash_usd is not None else snap.usd)
+        usd = usd.quantize(D("0.01"), rounding=ROUND_DOWN)
+        if usd < D(10) or self.tax_plan.in_progress(year)["rows"]:
+            return None
+        if not self.reverse_fx_verified:
+            self.j.put_meta("reverse_fx_needed", {"year": year, "usd": str(usd)})
+            return None
+        wait = self._retry_wait(now)
+        if wait:
+            return wait
+        if self._past(fx_deadline, now):
+            return "idle: FX window closed during this run"
+        quote = self.broker.fx_quote_sell(self._current(now))
+        check_fx_quote(quote, self._current(now), self.cfg)
+
+        def guard():
+            if self._past(fx_deadline, now):
+                raise Aborted("FX window closed before send")
+            try:
+                check_fx_quote(quote, self._current(now), self.cfg)
+            except Stop as exc:
+                raise Aborted("FX quote no longer valid at send time: " + str(exc)) from exc
+        def prepared(action):
+            self.tax_plan.start(year, action, "fx_out", self.tax_plan.usd_krw(usd) or 0, usd, now)
+            self.j.db.commit()
+
+        def abandoned(action):
+            self.tax_plan.cancel_progress(action)
+            self.j.db.commit()
+        return self._submit("fx_out", {"usd": str(usd), "krw_before": str(snap.krw), "rate": str(quote.ask),
+                                       "quote_time": quote.server_time, "tax_year": year},
+                            self._current(now), session, lambda: self.broker.exchange_to_krw(usd, quote), guard,
+                            prepared, abandoned)
 
     def tick(self, *, target, signal_date, expected_signal_date, session, now,
              may_exchange=False, may_trade=False, may_manage_orders=None, market_block=None, window_over=False,
@@ -928,11 +1079,20 @@ class Engine:
         if unsupported:
             raise Stop("Existing holdings left untouched: " + ", ".join(unsupported))
         self._track_switch(snap, target, signal_date, session, now)
+        self._secure_cash(snap, now, locked)
+        reserved_krw, reserved_usd = self._reserved(now)
+        free_usd = max(D(0), snap.usd - reserved_usd)
+        free_power = max(D(0), snap.buying_power - reserved_usd)
         note = self._note_carryover(snap, target, session, now) if window_over and not may_trade else None
         if market_block:
             raise Stop("New orders blocked: " + market_block)
+        if may_exchange and self.tax_plan is not None:
+            reverse = self._reverse_fx(snap, session, now, fx_deadline)
+            if reverse:
+                return reverse
         if may_exchange:
-            krw = fx_amount(snap.krw, fx_spent(self.j.rows(), session), self.cfg)
+            # KRW reserved for tax is never converted.
+            krw = fx_amount(max(D(0), snap.krw - reserved_krw), fx_spent(self.j.rows(), session), self.cfg)
             if krw >= self.cfg.min_fx_krw:
                 wait = self._retry_wait(now)
                 if wait:
@@ -941,6 +1101,7 @@ class Engine:
                 if self._past(fx_deadline, now):
                     return "idle: FX window closed during this run"
                 quote = self.broker.fx_quote(self._current(now))
+                self.j.put_meta("last_usd_rate", {"rate": str(quote.midpoint), "at": now.isoformat()})
                 check_fx_quote(quote, self._current(now), self.cfg)
                 if self._past(fx_deadline, now):
                     return "idle: FX window closed during this run"
@@ -980,17 +1141,22 @@ class Engine:
             side = "sell"
         else:
             symbol, side, qty = target, "buy", D(0)
+            if self.tax_plan is not None and not self._past(trade_deadline, now):
+                taxed = self._tax_sell(snap, target, signal_date, session, now, trade_deadline)
+                if taxed:
+                    return taxed
         if self._past(trade_deadline, now):
             return "idle: execution window closed during this run"
         quote = self.broker.quote(symbol, self._current(now))
         check_quote(quote, self._current(now), self.cfg)   # fresh time: reads may have been slow
         price = limit_price(quote, side, self.cfg)
         if side == "buy":
-            qty = buy_quantity(snap.usd, snap.buying_power, price, self.cfg)
+            # Money reserved for tax is never reinvested.
+            qty = buy_quantity(free_usd, free_power, price, self.cfg)
             if qty < 1:
                 aligned = snap.positions.get(target, D(0)) > 0
                 self.j.put_meta("position_state", {"target": target, "aligned": aligned, "session": session})
-                if buy_quantity(snap.usd, snap.usd, price, self.cfg) >= 1:
+                if buy_quantity(free_usd, free_usd, price, self.cfg) >= 1:
                     # Sale proceeds are in the estimate but not yet orderable: re-read
                     # on the next run; the switch can still finish intraday.
                     return "waiting: sale proceeds not yet orderable"
