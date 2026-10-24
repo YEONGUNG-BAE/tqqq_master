@@ -13,8 +13,8 @@ from .core import (D, SUBMITTING, UNKNOWN, Engine, Journal, JournalError, Settin
 from .history import recompute, refresh
 from .signal import STRATEGY_VERSION
 from .meritz import AuthError, Client, Meritz
-from .notify import Notifier, default_channels, scrub, secret_values
-from . import books, heartbeat, livecheck, tax, telegram_bot
+from .notify import Notifier, default_channels, mark_resolved, scrub, secret_values
+from . import books, heartbeat, livecheck, ops, progress, tax, telegram_bot
 from .tax_reserve import TaxPlan
 from .paper import Paper
 from .schedule import KST, Schedule, confirm_regular_session
@@ -121,14 +121,17 @@ def journal_unusable(marker, cfg, now, reason):
 def after_success(journal, notifier, result, signal, session, now):
     hold = journal.meta("active_hold")
     if hold:
-        notifier.send("recovered", "hold-cleared", "보류가 해소되어 자동 운용을 재개했습니다: " + hold["message"], now)
+        _, reason, _, _ = progress.classify(hold["message"])
+        notifier.send("recovered", "hold-cleared:" + hold_code(hold["message"]),
+                      f"보류가 해소되어 자동 운용을 재개했습니다 (발생 {_kst_short(hold.get('since'))}, 해소 "
+                      f"{_kst_short(now.isoformat())} KST): {reason}", now)
+        mark_resolved(journal, "hold:" + hold_code(hold["message"]), now)
         journal.put_meta("active_hold", None)
     if result.startswith("recovered:"):
         notifier.send("recovered", result + session, "응답이 불명확했던 요청을 증권사 기록으로 확인했습니다 ("
                       + result.split(":", 1)[1].strip() + "). 재전송하지 않았습니다.", now)
-    if result.startswith("carried over:"):
-        notifier.send("carryover", session, f"{session} 실행창 안에 목표 {signal['target']}를 끝내지 못했습니다: "
-                      + result.split(":", 1)[1].strip(), now)
+    # Carry-over (final not-finished) notices come from progress.observe, with
+    # the switch's priority and wait reason.
     position = journal.meta("position_state") or {}
     if position.get("aligned") and journal.meta("aligned_target") != position.get("target"):
         notifier.send("done", "aligned:" + position["target"], f"목표 {position['target']} 보유로 정렬을 마쳤습니다.", now)
@@ -137,6 +140,10 @@ def after_success(journal, notifier, result, signal, session, now):
     if journal.meta("heartbeat_day") != day:
         notifier.send("ok", day, f"자동 운용 중입니다. 현재 신호 목표: {signal['target']}", now)
         journal.put_meta("heartbeat_day", day)
+
+
+def _kst_short(at):
+    return datetime.fromisoformat(at).astimezone(KST).strftime("%m-%d %H:%M") if at else "기록 없음"
 
 
 def tax_notices(journal, notifier, settings, now, estimate_fn):
@@ -296,13 +303,36 @@ def run(args):
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
+            answer_readonly(state)    # a long order or live check holds it: still answer /status, /issues
             return 0
         with open(account_lock_path(cfg), "a") as account:
             try:
                 fcntl.flock(account, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
+                answer_readonly(state)
                 return 0   # another process (any state folder) is working on this account
             return run_locked(cfg, state, settings)
+
+
+def answer_readonly(state):
+    """Read-only Telegram answers without the state lock (local journal only).
+    Plan-changing commands stay queued for the process that holds the lock.
+    Never raises: a failure here cannot affect trading."""
+    try:
+        journal = Journal(state / "journal.sqlite")
+    except Exception:
+        return 0
+    try:
+        now = datetime.now(timezone.utc)
+        return telegram_bot.process(journal, telegram_bot.fetch(journal), tax.TaxSettings(), now, readonly_only=True)
+    except Exception as exc:
+        try:
+            journal.event("telegram_readonly_failed", {"error_type": type(exc).__name__}, datetime.now(timezone.utc))
+        except Exception:
+            pass
+        return 0
+    finally:
+        journal.db.close()
 
 
 def run_locked(cfg, state, settings):
@@ -318,6 +348,7 @@ def run_locked(cfg, state, settings):
     notifier.retry_pending(now)   # failed one-time messages are not lost if the event never repeats
     broker = schedule = None
     outcome = "error"
+    last_message = None
     try:
         check = livecheck.blocking(journal, account_marker_path(cfg))
         if check:
@@ -389,6 +420,7 @@ def run_locked(cfg, state, settings):
                              fx_deadline=schedule.exchange_deadline(now),
                              may_recover=may_recover, recovery_deadline=recovery[1] if may_recover else None)
         journal.put_meta("auth_failures", 0)
+        last_message = result
         if signal_error:
             # Own requests were settled above; the run still ends as a hold.
             journal.event("result", {"message": result}, now)
@@ -410,6 +442,7 @@ def run_locked(cfg, state, settings):
         # Exception strings from third-party code could contain secrets; only
         # our controlled Stop messages are published, otherwise the type name.
         message = str(exc) if isinstance(exc, Stop) else "Internal error: " + type(exc).__name__
+        last_message = message
         try:
             if isinstance(exc, AuthError) and exc.explicit:
                 count = (journal.meta("auth_failures") or 0) + 1
@@ -434,6 +467,16 @@ def run_locked(cfg, state, settings):
         output({"error": message, "mode": settings.mode})
         return 1
     finally:
+        try:
+            # Switch progress and delay alerts: notifications only, never trading state.
+            progress.observe(journal, notifier, schedule or Schedule(now), now, last_message, mode=settings.mode,
+                             recovery_buffer_minutes=settings.recovery_close_buffer_minutes,
+                             alerts_cfg=cfg.get("alerts"), locked=bool(journal.meta("halt")))
+        except Exception as exc:
+            try:
+                journal.event("progress_failed", {"error_type": type(exc).__name__}, now)
+            except Exception:
+                pass
         housekeeping(journal, notifier, cfg, broker, schedule, now)
         # Last, after trading and housekeeping: a monitor outage cannot delay anything.
         heartbeat.publish(journal, now=datetime.now(timezone.utc), run_at=now, outcome=outcome,
@@ -597,6 +640,19 @@ def live_check_locked(args, cfg, state, settings, journal):
     return 0
 
 
+def service_status_command(args):
+    """Read-only: which launchd service is installed/loaded, FileVault state,
+    last run age and the external monitor's configuration on this Mac."""
+    cfg, state, _ = load_config(args.config, allow_unverified_live=True)
+    load_env(Path(args.config).resolve().parent / "secrets.env")
+    journal = Journal(state / "journal.sqlite")
+    try:
+        output(ops.service_status(ROOT, journal.db, datetime.now(timezone.utc)))
+    finally:
+        journal.db.close()
+    return 0
+
+
 def utcnow():
     return datetime.now(timezone.utc)
 
@@ -679,6 +735,9 @@ def local_status(args):
             "pending": [{k: r[k] for k in ("id", "kind", "status", "created", "session", "filled", "attempt")}
                         for r in journal.pending()],
             "live_check": livecheck.blocking(journal, account_marker_path(cfg)),
+            "switch_progress": {k: v for k, v in progress.summary(journal).items() if k != "fingerprint"},
+            "issues": ops.issues_lines(journal.db, datetime.now(timezone.utc),
+                                       monitor_configured=bool(os.environ.get("MONITOR_URL"))),
             "books": books.diagnose(journal, datetime.now(timezone.utc))})
     return 0
 
@@ -719,6 +778,8 @@ def unlock(args):
                 raise Stop("Unresolved requests remain; reconcile them in the broker app and run "
                            "`resolve --action` for each: " + ", ".join(r["id"] for r in unresolved))
             previous = journal.meta("lock_info")
+            if previous:
+                mark_resolved(journal, "lock:" + str(previous.get("code", "lock")), datetime.now(timezone.utc))
             for key, value in (("halt", None), ("lock_info", None), ("failures", {"count": 0}), ("auth_failures", 0)):
                 journal.put_meta(key, value)
             journal.db.execute("DELETE FROM metadata WHERE key LIKE 'seen:%'")
@@ -789,9 +850,10 @@ def telegram_command(args):
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
-                # A run holds the state lock (and reads/moves reserves); it will
-                # process these commands itself. Nothing is confirmed here.
-                output({"processed": 0, "deferred_to_run": len(updates)})
+                # A run holds the state lock (and reads/moves reserves): answer the
+                # leading read-only messages now; plan changes wait for the run.
+                done = telegram_bot.process(journal, updates, tax.TaxSettings(), now, readonly_only=True)
+                output({"processed": done, "deferred_to_run": len(updates) - done})
                 return 0
             settings, plan, _ = make_plan(journal, cfg, now)
             lines, line_now = telegram_bot.plan_lines(plan)
@@ -816,7 +878,7 @@ def main():
     s.add_argument("--plan", help="plan id (execute/resume/stop/status)")
     s.add_argument("--confirm-live", action="store_true", help="execute/resume: allow this plan's real requests")
     s.add_argument("--unwind", action="store_true", help="resume after stop: sell only the check's own shares")
-    for name in ("run", "doctor", "status", "resolve", "unlock", "tax", "tax-sync", "telegram"):
+    for name in ("run", "doctor", "status", "resolve", "unlock", "tax", "tax-sync", "telegram", "service-status"):
         s = sub.add_parser(name)
         s.add_argument("--config", default="config.json")
         if name == "doctor":
@@ -841,7 +903,8 @@ def main():
             return 0
         return {"run": run, "doctor": doctor, "status": local_status, "resolve": resolve,
                 "unlock": unlock, "demo": demo, "tax": tax_command, "tax-sync": tax_sync_command,
-                "telegram": telegram_command, "live-check": live_check_command}[args.command](args)
+                "telegram": telegram_command, "live-check": live_check_command,
+                "service-status": service_status_command}[args.command](args)
     except (Stop, OSError, ValueError) as exc:
         output({"error": str(exc) if isinstance(exc, Stop) else type(exc).__name__})
         return 1
