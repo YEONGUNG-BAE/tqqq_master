@@ -387,6 +387,51 @@ class Journal:
         return [dict(r) for r in self.db.execute("SELECT * FROM actions ORDER BY created")]
 
 
+
+# ---- detection shared by the engine's repairs and the read-only diagnosis ----
+
+def _table(db, name):
+    return db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
+
+
+def _belongs(intent, row, payload):
+    if payload.get("switch"):
+        return payload["switch"] == intent["id"]
+    # Orders from before intents carried their id: same switch if placed after
+    # the intent started and on one of its symbols.
+    if row["created"] < intent["created_at"]:
+        return False
+    return ((payload.get("side") == "sell" and payload.get("symbol") in intent["from"])
+            or (payload.get("side") == "buy" and payload.get("symbol") == intent["to"]))
+
+
+def missing_switch_effects(journal):
+    """DONE orders of the current switch intent that it never counted."""
+    intent = journal.meta("switch_intent")
+    if not intent or intent.get("status") == "superseded":
+        return []
+    return [r for r in journal.with_status(DONE) if r["kind"] == "order" and r["id"] not in intent["counted"]
+            and _belongs(intent, r, json.loads(r["payload"]))]
+
+
+def missing_tax_effects(journal):
+    """DONE tax sells / reverse FX whose reservation is still in progress."""
+    if not _table(journal.db, "tax_inprogress"):
+        return []
+    open_ids = {row[0] for row in journal.db.execute("SELECT action_id FROM tax_inprogress")}
+    return [r for r in journal.with_status(DONE) if r["kind"] in ("order", "fx_out") and r["id"] in open_ids]
+
+
+def orphan_reservations(journal):
+    """(action id, status) of in-progress tax reservations whose request is
+    provably unsent, refused, rejected, operator-resolved, or has no row."""
+    if not _table(journal.db, "tax_inprogress"):
+        return []
+    rows = journal.db.execute("SELECT action_id FROM tax_inprogress").fetchall()
+    return [(a, journal.status(a)) for (a,) in rows
+            if journal.status(a) in (None, NOT_SENT, REFUSED, REJECTED, "operator_resolved")]
+
+
 def set_lock(journal, code, message, now, *, action=None, required=None):
     """Persist a hard lock (first cause wins). Reads and reconciliation continue;
     no new financial request is sent until a person clears it."""
@@ -615,48 +660,27 @@ class Engine:
             # Conservative: a sell fills at or above its limit; fee buffer deducted.
             self.tax_plan.finish_sell(action_id, filled * money(payload["price"]) * (1 - self.cfg.fee_buffer), now)
 
-    def _belongs(self, intent, row, payload):
-        if payload.get("switch"):
-            return payload["switch"] == intent["id"]
-        # Orders from before intents carried their id: same switch if placed after
-        # the intent started and on one of its symbols.
-        if row["created"] < intent["created_at"]:
-            return False
-        return ((payload.get("side") == "sell" and payload.get("symbol") in intent["from"])
-                or (payload.get("side") == "buy" and payload.get("symbol") == intent["to"]))
-
     def _replay_effects(self, now):
         """Repair books left incomplete by an older version (status committed,
         derived entries not). Evidence is the journal's own DONE rows; every
         replay is idempotent and recorded as an event."""
-        done = [r for r in self.j.with_status(DONE) if r["kind"] in ("order", "fx_out")]
-        if not done:
-            return
-        intent = self.j.meta("switch_intent")
-        if intent and intent.get("status") != "superseded":
-            missing = []
-            for r in done:
-                payload = json.loads(r["payload"])
-                if r["kind"] == "order" and r["id"] not in intent["counted"] and self._belongs(intent, r, payload):
-                    missing.append((r, payload))
-            if missing:
-                with self.j.atomic():
-                    if intent["status"] == "done":
-                        # Completed without counting its own fills: reopen; the
-                        # next run re-checks holdings and money before acting.
-                        intent.update(status="buying", completed_at=None, completed_by=None)
-                        self._save_intent(intent)
-                        self.j.event("switch_reopened", {"id": intent["id"], "missing": [r["id"] for r, _ in missing]}, now)
-                    for r, payload in missing:
-                        result = json.loads(r["result"] or "{}")
-                        self._switch_fill(r, payload, money(r["filled"] or result.get("filled", 0)),
-                                          result.get("state", "filled"), now)
-                        self.j.event("effects_replayed", {"action": r["id"], "what": "switch"}, now)
+        missing = missing_switch_effects(self.j)
+        if missing:
+            intent = self.j.meta("switch_intent")
+            with self.j.atomic():
+                if intent["status"] == "done":
+                    # Completed without counting its own fills: reopen; the
+                    # next run re-checks holdings and money before acting.
+                    intent.update(status="buying", completed_at=None, completed_by=None)
+                    self._save_intent(intent)
+                    self.j.event("switch_reopened", {"id": intent["id"], "missing": [r["id"] for r in missing]}, now)
+                for r in missing:
+                    payload, result = json.loads(r["payload"]), json.loads(r["result"] or "{}")
+                    self._switch_fill(r, payload, money(r["filled"] or result.get("filled", 0)),
+                                      result.get("state", "filled"), now)
+                    self.j.event("effects_replayed", {"action": r["id"], "what": "switch"}, now)
         if self.tax_plan is not None:
-            open_ids = {row[0] for row in self.j.db.execute("SELECT action_id FROM tax_inprogress")}
-            for r in done:
-                if r["id"] not in open_ids:
-                    continue
+            for r in missing_tax_effects(self.j):
                 payload, result = json.loads(r["payload"]), json.loads(r["result"] or "{}")
                 receipt = json.loads(r["receipt"] or "{}")
                 with self.j.atomic():
@@ -668,17 +692,14 @@ class Engine:
                     self.j.event("effects_replayed", {"action": r["id"], "what": "tax"}, now)
 
     def _release_orphans(self, now):
-        """In-progress tax reservations whose request can no longer execute:
-        provably unsent, refused, rejected, operator-resolved, or no request row
-        at all. Requests that may have executed (submitting/unknown/live) keep
-        their reservation until reconciled with the broker."""
+        """In-progress tax reservations whose request can no longer execute.
+        Requests that may have executed keep their reservation until reconciled
+        with the broker."""
         if self.tax_plan is None:
             return
-        for action_id, krw in self.j.db.execute("SELECT action_id, krw_equiv FROM tax_inprogress").fetchall():
-            status = self.j.status(action_id)
-            if status is None or status in (NOT_SENT, REFUSED, REJECTED, "operator_resolved"):
-                with self.j.atomic():
-                    self.tax_plan.cancel_progress(action_id, now, reason=f"request {status or 'missing'}")
+        for action_id, status in orphan_reservations(self.j):
+            with self.j.atomic():
+                self.tax_plan.cancel_progress(action_id, now, reason=f"request {status or 'missing'}")
 
     def _order_status(self, row, receipt, now, session):
         """Order state for settling. A known order merely not yet shown as terminal
@@ -1130,6 +1151,7 @@ class Engine:
         wait = self._retry_wait(now)
         if wait:
             return wait
+        self._require_no_reservations(now)
         if self._past(fx_deadline, now):
             return "idle: FX window closed during this run"
         quote = self.broker.fx_quote_sell(self._current(now))

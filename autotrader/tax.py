@@ -113,28 +113,36 @@ def settlement_date(trade_date, sessions):
     return later[cycle - 1], f"computed T+{cycle} ({SETTLEMENT_BASIS})"
 
 
-def repair_settlements(db, now):
-    """Recompute stored settlement dates with the era rules and a calendar that
-    covers every stored trade. A changed date clears that row's FX (it is
-    fetched again for the right day); a date without a verified basis is
-    removed (quarantined as unverified). Every change is audited. Idempotent."""
+def settlement_mismatches(db, now):
+    """Read-only: (fill key, stored date, correct date or None, basis) for every
+    stored fill whose settlement date differs from the era rules on a calendar
+    covering every stored trade."""
+    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='tax_fills'").fetchone() is None:
+        return []
     rows = db.execute("SELECT fill_key, trade_date, settle_date, settle_source FROM tax_fills").fetchall()
-    if not rows:
-        return 0
     trades = [r[1] for r in rows if r[1] >= "1990-01-02"]
     sessions = settlement_sessions(min(trades), now.date().isoformat()) if trades else []
-    changed = 0
+    found = []
     for key, trade, stored, source in rows:
-        settle, new_source = settlement_date(trade, sessions)
+        settle, basis = settlement_date(trade, sessions)
         if settle == stored and (settle is not None or str(source or "").startswith("unverified")):
             continue
+        found.append((key, stored, settle, basis))
+    return found
+
+
+def repair_settlements(db, now):
+    """Recompute stored settlement dates. A changed date clears that row's FX
+    (it is fetched again for the right day); a date without a verified basis is
+    removed (quarantined as unverified). Every change is audited. Idempotent."""
+    found = settlement_mismatches(db, now)
+    for key, stored, settle, basis in found:
         db.execute("UPDATE tax_fills SET settle_date=?, settle_source=?, fx=NULL, fx_source=NULL WHERE fill_key=?",
-                   (settle, new_source, key))
+                   (settle, basis, key))
         db.execute("INSERT INTO tax_corrections(fill_key, field, old, new, reason, at) VALUES (?,?,?,?,?,?)",
-                   (key, "settle_date", stored, settle, new_source, now.isoformat()))
-        changed += 1
+                   (key, "settle_date", stored, settle, basis, now.isoformat()))
     db.commit()
-    return changed
+    return len(found)
 
 
 def _issue(db, key, kind, detail, at):

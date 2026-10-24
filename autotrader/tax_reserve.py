@@ -51,6 +51,9 @@ CREATE TABLE IF NOT EXISTS tax_external_deposits(
   status TEXT NOT NULL, matched_ref TEXT UNIQUE, created TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS tax_issues(
   issue_key TEXT PRIMARY KEY, kind TEXT NOT NULL, detail TEXT NOT NULL, at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS tax_corrections(
+  seq INTEGER PRIMARY KEY AUTOINCREMENT, fill_key TEXT NOT NULL, field TEXT NOT NULL, old TEXT, new TEXT,
+  reason TEXT NOT NULL, at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS tax_deadlines(
   year INTEGER PRIMARY KEY, deadline TEXT NOT NULL, set_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS tax_moves(
@@ -70,9 +73,17 @@ def ensure_schema(db):
         # they are flagged for the user instead of being guessed.
         db.execute("ALTER TABLE tax_external_funds ADD COLUMN deposited_krw TEXT NOT NULL DEFAULT '0'")
         db.execute("ALTER TABLE tax_external_funds ADD COLUMN paid_ext_krw TEXT NOT NULL DEFAULT '0'")
-        for year, amount in db.execute("SELECT year, SUM(CAST(amount AS REAL)) FROM tax_moves WHERE "
-                                       "from_state='external_secured' AND to_state='reserve_krw' GROUP BY year").fetchall():
-            db.execute("UPDATE tax_external_funds SET deposited_krw=? WHERE year=?", (str(D(str(amount))), year))
+        at = datetime.now().isoformat()
+        moved = {}
+        for year, amount in db.execute("SELECT year, amount FROM tax_moves WHERE from_state='external_secured' "
+                                       "AND to_state='reserve_krw'").fetchall():
+            moved[year] = moved.get(year, D(0)) + D(amount)
+        for year, amount in moved.items():
+            if db.execute("UPDATE tax_external_funds SET deposited_krw=? WHERE year=?", (str(amount), year)).rowcount:
+                db.execute("INSERT INTO tax_corrections(fill_key, field, old, new, reason, at) VALUES (?,?,?,?,?,?)",
+                           (f"external_funds:{year}", "deposited_krw", "0", str(amount),
+                            "reconstructed from external_secured->reserve_krw moves: the older version counted "
+                            "deposited external money both as secured and as reserve", at))
         for (year,) in db.execute("SELECT DISTINCT year FROM tax_moves WHERE from_state='outside' AND to_state='paid_krw'"):
             db.execute("INSERT OR IGNORE INTO tax_issues VALUES (?,?,?,?)",
                        (f"payment_source:{year}", "payment_source_unknown",

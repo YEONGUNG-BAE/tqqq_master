@@ -12,7 +12,7 @@ from .core import (D, SUBMITTING, UNKNOWN, Engine, Journal, JournalError, Settin
 from .history import refresh
 from .meritz import AuthError, Client, Meritz
 from .notify import Notifier, default_channels, scrub, secret_values
-from . import heartbeat, tax, telegram_bot
+from . import books, heartbeat, tax, telegram_bot
 from .tax_reserve import TaxPlan
 from .paper import Paper
 from .schedule import KST, Schedule, confirm_regular_session
@@ -473,7 +473,8 @@ def local_status(args):
             "failures": journal.meta("failures"), "auth_failures": journal.meta("auth_failures"),
             "monitor": {"instance": heartbeat.instance_id(journal), "last_send": journal.meta("monitor_last_send")},
             "pending": [{k: r[k] for k in ("id", "kind", "status", "created", "session", "filled", "attempt")}
-                        for r in journal.pending()]})
+                        for r in journal.pending()],
+            "books": books.diagnose(journal, datetime.now(timezone.utc))})
     return 0
 
 
