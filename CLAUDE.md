@@ -15,6 +15,7 @@
 .venv/bin/python -m autotrader tax --config config.json       # 저장된 원장으로 예상 세액 (네트워크 없음)
 .venv/bin/python -m autotrader tax-sync --config config.json  # 세무 원장 동기화 (GET 조회만)
 .venv/bin/python -m autotrader telegram --config config.json  # 텔레그램 명령 1회 처리
+.venv/bin/python -m autotrader service-status --config config.json  # 서비스 설치·FileVault·마지막 실행 (읽기 전용)
 .venv/bin/python -m autotrader live-check plan --config config.json --budget-usd <검증예산USD>   # 읽기 전용 계획
 .venv/bin/python -m autotrader live-check execute --config config.json --plan <ID> --confirm-live # 계획 범위의 실거래
 .venv/bin/python -m autotrader live-check status|stop|resume --config config.json --plan <ID>
@@ -46,6 +47,8 @@ exchange-calendars의 NumPy DeprecationWarning은 알려진 경고다. 근거 �
 - 일시 보류는 자동 재개한다. 해소 불가 잠금은 사람이 `resolve`/`unlock`으로 푼다. 잠금 중에도 조회와 자기 주문 대조는 계속하지만 새 요청(취소 포함)은 보내지 않는다. 실패 횟수·불명 상태는 재시작해도 초기화하지 않는다.
 - 이월·장중 재주문은 실행상의 예외 처리다. 백테스트 체결 가정과 같다고 보지 않고 기록한다.
 - 알림에는 키·토큰·계좌·주문번호·잔고·금액을 넣지 않는다. 알림 실패는 거래 상태를 바꾸지 않는다.
+- 전환 진척은 프로세스 생존·조회 성공과 따로 기록한다(`progress.py`). 진척은 체결 수량 증가, 매도대금·매수액 반영, 단계 진입·완료만이다. 반복 waiting, 조회 성공, 하트비트, 체결 없는 주문 재전송은 진척이 아니다. 지연 알림(초기·무진척·최종)은 알림만 하고 주문 수·가격 한도·주문 시간을 넓히지 않는다. observe에서는 보내지 않는다.
+- 텔레그램 `/status`·`/issues`와 정해진 한국어 별칭은 로컬 기록만 읽는 조회다. "확인했어/재개" 같은 답장으로 잠금 해제·재전송·verified 변경·매도를 하지 않는다. 잠금 중에도 읽기 전용 응답은 하되, 계획 변경 명령을 건너뛰지 않는다.
 - 예외: 세금 관련 금액(`/tax` 응답, 세금 알림)만 표시한다. `notify.TAX_FIELDS`의 구조화된 필드로만 그리고, 자유 문장의 숫자 가림과 비밀 제거는 유지한다. 전체 잔고·평가금액·수익률·계좌번호·주문번호는 계속 넣지 않는다. 예외 문자열·원시 API 응답·사용자 자유 입력은 그대로 출력하지 않는다.
 - 결제일은 뉴욕증권거래소 개장일이면서 연방준비제도 영업일인 날로 계산한다. 증권사가 확인했거나 사용자가 입력한 결제일은 계산값보다 우선하며, 자동 정정은 이 프로그램이 계산해 저장한 값에만 한다.
 - 스키마 변경은 한 트랜잭션으로 적용하고 완료 표시를 따로 남긴다. 컬럼 하나의 존재로 완료를 판단하지 않는다.

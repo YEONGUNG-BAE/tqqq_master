@@ -35,6 +35,10 @@
     "settlement_buffer_days": 7,
     "installment_day": 15
   },
+  "alerts": {
+    "early_minutes_after_window": 10,
+    "stall_minutes": 10
+  },
   "verified": {
     "split_only_data": false,
     "usd_buying_power_and_fees": false,
