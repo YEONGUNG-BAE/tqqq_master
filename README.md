@@ -165,6 +165,65 @@ TQQQ·QQQ·QQQM·BRK.B는 기존 경로를 그대로 쓰며, 사용자 설정으
 
 **doctor 출력 이름 변경.** `switch_to_qqq_at_or_below`·`return_to_tqqq_at_or_above`를 각각 `exit_to_defensive_at_or_below_qqq_close`·`return_to_risk_at_or_above_qqq_close`로 바꿨습니다. 두 값 모두 QQQ 종가 기준입니다. 같은 보고서에 `signal_symbol`·`risk_symbol`·`defensive_symbol`도 함께 표시합니다.
 
+## 실계좌 소액 검증 (`live-check`)
+
+기존 보유(나스닥 ETF·버크셔 등)를 그대로 두고, 직접 정한 USD 예산 안에서 TQQQ·SGOV를 1주씩 사고팔아 실제 시세·주문·체결·취소·재시작 경로를 확인하는 전용 명령입니다. 일반 `run`을 live로 켜지 않습니다. 이 명령은 observe 설정·`verified`·`migrate_symbols`·신호·전환 상태를 바꾸지 않습니다. 환전·역환전·세금 매도도 하지 않습니다.
+
+```sh
+.venv/bin/python -m autotrader live-check plan --config config.json --budget-usd <검증예산USD>
+.venv/bin/python -m autotrader live-check status --config config.json --plan <계획ID>
+.venv/bin/python -m autotrader live-check execute --config config.json --plan <계획ID> --confirm-live
+.venv/bin/python -m autotrader live-check resume --config config.json --plan <계획ID> --confirm-live
+.venv/bin/python -m autotrader live-check stop --config config.json --plan <계획ID>
+.venv/bin/python -m autotrader live-check resume --config config.json --plan <계획ID> --confirm-live --unwind
+```
+
+- **plan (읽기 전용)**
+  - 조회와 토큰 발급만 합니다. 예산은 반드시 직접 지정하며, 기본값이나 전액 옵션은 없습니다.
+  - 계획에 다음을 기록합니다: 계좌 식별(키 지문), 보호할 기존 보유의 실제 종목·수량, 6단계(① TQQQ 매수 ② 그 TQQQ 매도 ③ SGOV 매수 ④ 그 SGOV 매도 ⑤ TQQQ 매수 ⑥ 그 TQQQ 매도 후 USD로 종료, 모두 1주), 시세·주문 경로, 예상 수수료 여유분, 실행 조건, 미검증 항목.
+  - 다음 경우에는 계획을 거부합니다.
+    - 잠금, 결과 불명·진행 중 요청, 진행 중 전환, 외부 미체결, 예약주문, 예약 조회 범위 미확인이 있을 때
+    - TQQQ·SGOV를 이미 보유할 때(기존 물량과 섞지 않음)
+    - SGOV 경로가 미확인일 때
+    - 예산이 1주 + 수수료 여유보다 작거나, 자기 USD(고정·세금 준비금 제외)보다 클 때
+- **execute / resume (실거래)**
+  - `--plan`과 `--confirm-live`가 모두 있어야 합니다.
+  - 정규장 확인과 개장 1~15분 실행창에서만 신규 주문을 냅니다. 호가 신선도·스프레드·방향별 수량 단위·매도 전용·거래정지·예약주문 전체 조회·주문 상한·백오프는 일반 엔진과 같습니다.
+  - 각 단계는 이전 주문의 체결이 확정되고 잔고에 반영된 뒤에만 진행합니다.
+  - 실행창이 끝나면 상태를 저장하고 멈춥니다. 다음 실행창에 `resume`으로 이어갑니다. 상태 대조는 실행창 밖에서도 합니다.
+  - 끝난 계획(completed·stopped)은 다시 거래하지 않습니다. 새 거래에는 새 계획이 필요합니다.
+- **권한 범위**
+  - 계획에 없는 종목·수량·방향·단계, 예산 초과, 다른 주문의 취소는 세 곳에서 막습니다: 주문 의도 저장 전, HTTP 전송 직전, 전송 계층.
+  - 원화·외화 환전 API는 전송 계층에서 거부합니다.
+- **예산**
+  - 가용금 = 예산 − 확정 매수액(수수료 여유 포함) − 미체결 매수 예약 + 확정 매도대금(수수료 여유 차감).
+  - 계좌에 USD가 더 있거나 중간에 입금·배당이 생겨도 늘어나지 않습니다. 같은 체결을 두 번 세지 않습니다.
+  - 예산은 자금 한도일 뿐, 손실 상한이나 갭 위험 보장이 아닙니다.
+- **일반 run과의 관계**
+  - 검증이 진행 중이거나 중단 뒤 테스트 보유가 남아 있으면, 일반 `run`은 아무 요청도 보내지 않고 보류로 끝납니다.
+  - 계좌 잠금 폴더에 표시 파일을 두므로, 다른 `state_dir`에서 실행한 `run`도 멈춥니다.
+- **stop**
+  - 신규 검증 주문을 멈추고, 다음 `resume`에서 자기 미체결만 취소합니다.
+  - 테스트 보유가 남으면 일반 run 정지를 유지합니다. `--unwind`로 그 1주만 팔아야 정리됩니다.
+  - 결과 불명 상태는 지우지 않고, 자동 청산도 하지 않습니다.
+- **기록**
+  - `state_dir/live_check/<계획ID>.json`(권한 600)에 다음을 남깁니다: 단계, 배정·예약·사용·회수 자금, 주문·체결·시각, 주문 전 호가 대비 체결가(세무 동기화 후), 기존 보유 변화, 남은 테스트 물량, 매도대금 재사용 판정.
+  - 공식 시가 대비 차이는 신뢰할 자료가 없어 계산하지 않습니다.
+- **매도대금 재사용 판정**
+  - 기존 현금만으로 다음 매수가 가능했으면 "판정 불가"로 남깁니다.
+  - 매도대금이 있어야만 가능했던 매수가 체결된 경우에만 "확인"으로 적습니다.
+- **알림**
+  - 텔레그램에는 단계·종목·상태만 보냅니다. 예산·잔고·손익은 보내지 않습니다.
+
+**소액 검증 합격 기준(사용자가 확인)**
+1. 6단계가 모두 1주씩 체결되고, 상태가 `completed`이며, TQQQ·SGOV 테스트 보유가 0입니다.
+2. 기존 보유 수량이 기준선과 같습니다.
+3. 원화와 세금 준비금이 그대로입니다.
+4. 앱의 주문·체결 내역이 보고서와 일치합니다. 실제 수수료는 세무 동기화 후 확인합니다.
+5. 실행 도중 재시작해도 중복 주문이 없습니다.
+
+이 검증은 부분 체결, 실제 장애, 경고, 폭락일 유동성까지 확인하지 않습니다. `verified` 값은 결과를 보고 사용자가 직접 판단합니다.
+
 ## 예약 실행과 장애 처리
 
 검증 전에도 읽기 전용 관찰을 예약할 수 있습니다. 다음 명령은 설정 파일만 생성합니다.

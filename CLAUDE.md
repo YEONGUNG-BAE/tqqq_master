@@ -15,6 +15,9 @@
 .venv/bin/python -m autotrader tax --config config.json       # 저장된 원장으로 예상 세액 (네트워크 없음)
 .venv/bin/python -m autotrader tax-sync --config config.json  # 세무 원장 동기화 (GET 조회만)
 .venv/bin/python -m autotrader telegram --config config.json  # 텔레그램 명령 1회 처리
+.venv/bin/python -m autotrader live-check plan --config config.json --budget-usd <검증예산USD>   # 읽기 전용 계획
+.venv/bin/python -m autotrader live-check execute --config config.json --plan <ID> --confirm-live # 계획 범위의 실거래
+.venv/bin/python -m autotrader live-check status|stop|resume --config config.json --plan <ID>
 ```
 
 환경: `.venv`, Python 3.14.5, exchange-calendars 4.12, pandas 2.3.3, NumPy 2.5.4.
@@ -57,4 +60,5 @@ exchange-calendars의 NumPy DeprecationWarning은 알려진 경고다. 근거 �
 - 외부 감시는 거래 Mac이 아닌 호스트에서 돌리고, 증권사 키·계좌 접근·주문 권한을 주지 않는다. 다른 기기가 주문을 이어받는 구조를 만들지 않는다. 상태 발신은 정해진 필드만(수량·금액·계좌·주문번호·원시 오류·키 없이) 서명해서 보내고, 거래 판단이 끝난 뒤 짧은 시간 제한으로만 보낸다.
 - 기존 비전략 보유(QQQM·BRK.B, 이전 방어 자산 QQQ 등)는 자동 매도·전환하지 않는다. `migrate_symbols`에 사용자가 명시할 때만 예외다(개장 실행창에서만). 보유 QQQ를 SGOV로 표시하지 않는다.
 - 비밀(`secrets.env`, `token.json`)과 상태(`state*/`, `paper_*/`)는 Git에서 제외한다. 내용을 출력하지 않는다. `paper_self`와 상태 DB는 삭제하거나 초기화하지 않는다.
+- 실계좌 소액 검증(`live-check`)만 좁은 예외다. 사용자가 정한 USD 예산과 계획 ID, `--confirm-live`가 있을 때 TQQQ·SGOV를 1주씩 정해진 6단계로만 거래한다. 권한은 의도 저장 전·전송 직전·전송 계층에서 모두 검사한다. 일반 run의 live 검사, observe 설정, verified, migrate_symbols, 신호·전환 상태는 바꾸지 않는다. 다른 보유 종목은 주문·취소하지 않는다. 검증이 진행 중이거나 테스트 보유가 남아 있으면 일반 run은 아무 요청도 보내지 않는다. 검증 요청은 같은 계좌 저널에 소유자로 표시하고, 소유자별로만 대조·장부 반영한다.
 - 상시 실행 등록(launchctl), 실제 자금 이동, live 전환, 원격 업로드는 사용자의 명시적 결정 전에는 하지 않는다.
