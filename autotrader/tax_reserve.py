@@ -329,8 +329,16 @@ class TaxPlan:
         self._move(row[0], now, "reverse_fx", "reserve_krw", D(krw_received).quantize(D(1), rounding=ROUND_DOWN),
                    "KRW", action_id)
 
-    def cancel_progress(self, action_id):
+    def cancel_progress(self, action_id, now=None, reason="cancelled"):
+        """Release a reservation whose request did not and cannot execute; the
+        release is audited."""
+        row = self.db.execute("SELECT year, krw_equiv FROM tax_inprogress WHERE action_id=?", (action_id,)).fetchone()
+        if not row:
+            return
         self.db.execute("DELETE FROM tax_inprogress WHERE action_id=?", (action_id,))
+        self.db.execute("INSERT INTO tax_moves(year, at, from_state, to_state, amount, currency, ref) VALUES (?,?,?,?,?,?,?)",
+                        (row[0], (now.isoformat() if now else datetime.now().isoformat()), "in_progress",
+                         "released: " + reason, row[1], "KRW", action_id))
 
     # ---- withdrawals and payments ----
 

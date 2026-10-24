@@ -80,6 +80,13 @@ class PersistentPaper(Paper):
         self._save()
         return result
 
+    def exchange_to_krw(self, usd, quote):
+        if usd <= 0 or usd > self.usd:
+            raise Stop("Paper reverse FX exceeds available USD")
+        result = super().exchange_to_krw(usd, quote)
+        self._save()
+        return result
+
     def order(self, symbol, side, qty, price, now):
         if side not in {"buy", "sell"} or qty <= 0 or qty != qty.to_integral_value() or price <= 0:
             raise Stop("Invalid whole-share paper order")

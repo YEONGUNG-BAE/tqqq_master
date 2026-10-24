@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import random
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_DOWN, ROUND_UP
@@ -270,6 +271,7 @@ class Journal:
     on `inflight` makes a second concurrent intent fail inside SQLite itself."""
 
     def __init__(self, path):
+        self._depth = 0
         try:
             self.db = sqlite3.connect(path)
             self.db.row_factory = sqlite3.Row
@@ -298,18 +300,39 @@ class Journal:
         except sqlite3.DatabaseError as exc:
             raise JournalError("State database unreadable: " + type(exc).__name__) from exc
 
+    @contextmanager
+    def atomic(self):
+        """One transaction for several writes. Inside it no helper commits; the
+        whole block commits at the end or rolls back on any exception, so a kill
+        between two related writes can never leave only one of them on disk."""
+        self._depth += 1
+        try:
+            yield
+        except BaseException:
+            self._depth -= 1
+            if self._depth == 0:
+                self.db.rollback()
+            raise
+        self._depth -= 1
+        if self._depth == 0:
+            self.db.commit()
+
+    def commit(self):
+        if self._depth == 0:
+            self.db.commit()
+
     def meta(self, key, default=None):
         row = self.db.execute("SELECT value FROM metadata WHERE key=?", (key,)).fetchone()
         return json.loads(row[0]) if row else default
 
     def put_meta(self, key, value):
         self.db.execute("INSERT OR REPLACE INTO metadata VALUES (?,?)", (key, json.dumps(value, default=str)))
-        self.db.commit()
+        self.commit()
 
     def event(self, category, value, now):
         self.db.execute("INSERT INTO events VALUES (?,?,?)",
                         (now.isoformat(), category, json.dumps(value, default=str)))
-        self.db.commit()
+        self.commit()
 
     def create(self, kind, payload, now, session, status=SUBMITTING, **columns):
         action = str(uuid4())
@@ -319,9 +342,10 @@ class Journal:
             self.db.execute(f"INSERT INTO actions({','.join(names)}) VALUES ({','.join('?' * len(names))})",
                             (action, kind, status, now.isoformat(), session,
                              json.dumps(payload, default=str), *values.values()))
-            self.db.commit()
+            self.commit()
         except sqlite3.IntegrityError as exc:
-            self.db.rollback()
+            if self._depth == 0:
+                self.db.rollback()
             raise Stop("Another financial request is already in flight; no new request") from exc
         return action
 
@@ -333,13 +357,13 @@ class Journal:
                         (status, json.dumps(receipt, default=str) if receipt is not None else None,
                          json.dumps(result, default=str) if result is not None else None,
                          *values.values(), action))
-        self.db.commit()
+        self.commit()
 
     def transition(self, action, old, new):
         """Compare-and-set status change; False if another writer changed the row."""
         cursor = self.db.execute("UPDATE actions SET status=?, inflight=?, updated=? WHERE id=? AND status=?",
                                  (new, 1 if new in IN_FLIGHT else None, datetime.now(UTC).isoformat(), action, old))
-        self.db.commit()
+        self.commit()
         return cursor.rowcount == 1
 
     def status(self, action):
@@ -438,7 +462,7 @@ class Engine:
     def _forget(self, key):
         if self.j.meta("seen:" + key) is not None:
             self.j.db.execute("DELETE FROM metadata WHERE key=?", ("seen:" + key,))
-            self.j.db.commit()
+            self.j.commit()
 
     # ---- sending ----
 
@@ -450,13 +474,20 @@ class Engine:
             raise Locked(self.j.meta("halt"))
         attempt = 1 + sum(r["kind"] == kind and r["session"] == session for r in self.j.rows())
         target = payload.get("target")
-        action = self.j.create(kind, payload, now, session, status=PREPARED, attempt=attempt, run_id=self.run_id,
-                               account=(self.j.meta("broker_key_fingerprint") or "paper")[:16],
-                               target_version=f"{payload.get('signal_date')}:{target}" if target else None)
-        if prepared is not None:
-            # Reserve money for this request BEFORE it can leave, so a lost reply
-            # can never leave the money counted twice.
-            prepared(action)
+        with self.j.atomic():
+            # The intent and its money reservation exist together or not at all;
+            # the reservation exists BEFORE the request can leave.
+            action = self.j.create(kind, payload, now, session, status=PREPARED, attempt=attempt, run_id=self.run_id,
+                                   account=(self.j.meta("broker_key_fingerprint") or "paper")[:16],
+                                   target_version=f"{payload.get('signal_date')}:{target}" if target else None)
+            if prepared is not None:
+                prepared(action)
+
+        def give_up(status, result):
+            with self.j.atomic():
+                self.j.update(action, status, result=result)
+                if abandoned is not None:
+                    abandoned(action)
 
         def mark_sending():
             # Runs after token issue and call pacing, immediately before the HTTP
@@ -479,35 +510,25 @@ class Engine:
         try:
             receipt = call()
         except Aborted as exc:
-            self.j.update(action, NOT_SENT, result={"reason": "aborted before send: " + str(exc)})
-            if abandoned is not None:
-                abandoned(action)
+            give_up(NOT_SENT, {"reason": "aborted before send: " + str(exc)})
             return "idle: " + str(exc)
         except NotSent as exc:
-            self.j.update(action, NOT_SENT, result={"reason": str(exc)})
-            if abandoned is not None:
-                abandoned(action)
+            give_up(NOT_SENT, {"reason": str(exc)})
             self._register_failure(now, "not sent: " + str(exc))
             raise
         except Refused as exc:
-            self.j.update(action, REFUSED, result={"code": exc.code, "reason": str(exc)})
-            if abandoned is not None:
-                abandoned(action)
+            give_up(REFUSED, {"code": exc.code, "reason": str(exc)})
             self._register_failure(now, "refused: " + str(exc))
             raise
         except Rejected as exc:
-            self.j.update(action, REJECTED, result={"reason": str(exc)})
-            if abandoned is not None:
-                abandoned(action)
+            give_up(REJECTED, {"reason": str(exc)})
             set_lock(self.j, "broker_warning", "Broker rejected action " + action + ": " + str(exc), now,
                      action=action, required="Read the warning in the broker app; the bot never acknowledges warnings")
             raise
         except Exception as exc:
             if self.j.status(action) == PREPARED:
                 # Failed before the send-start record (e.g. token issue): never transmitted.
-                self.j.update(action, NOT_SENT, result={"error_type": type(exc).__name__})
-                if abandoned is not None:
-                    abandoned(action)
+                give_up(NOT_SENT, {"error_type": type(exc).__name__})
                 self._register_failure(now, "not sent: " + type(exc).__name__)
                 raise NotSent("Request not sent: " + (str(exc) if isinstance(exc, Stop) else type(exc).__name__)) from exc
             # A timeout, malformed JSON, programming exception or crash after the
@@ -580,6 +601,79 @@ class Engine:
                        required="Check the broker app for this request, then `resolve --action` and `unlock`")
         raise UnknownOutcome("Unresolved action " + row["id"] + "; reconciling with broker records, no resubmission")
 
+    def _order_effects(self, action_id, payload, filled, state, now):
+        """Derived bookkeeping of a terminal order. Called inside the same
+        transaction as the DONE status, and idempotent (keyed by action id)."""
+        self._switch_fill({"id": action_id}, payload, filled, state, now)
+        if payload.get("tax_year") and self.tax_plan is not None:
+            # Conservative: a sell fills at or above its limit; fee buffer deducted.
+            self.tax_plan.finish_sell(action_id, filled * money(payload["price"]) * (1 - self.cfg.fee_buffer), now)
+
+    def _belongs(self, intent, row, payload):
+        if payload.get("switch"):
+            return payload["switch"] == intent["id"]
+        # Orders from before intents carried their id: same switch if placed after
+        # the intent started and on one of its symbols.
+        if row["created"] < intent["created_at"]:
+            return False
+        return ((payload.get("side") == "sell" and payload.get("symbol") in intent["from"])
+                or (payload.get("side") == "buy" and payload.get("symbol") == intent["to"]))
+
+    def _replay_effects(self, now):
+        """Repair books left incomplete by an older version (status committed,
+        derived entries not). Evidence is the journal's own DONE rows; every
+        replay is idempotent and recorded as an event."""
+        done = [r for r in self.j.with_status(DONE) if r["kind"] in ("order", "fx_out")]
+        if not done:
+            return
+        intent = self.j.meta("switch_intent")
+        if intent and intent.get("status") != "superseded":
+            missing = []
+            for r in done:
+                payload = json.loads(r["payload"])
+                if r["kind"] == "order" and r["id"] not in intent["counted"] and self._belongs(intent, r, payload):
+                    missing.append((r, payload))
+            if missing:
+                with self.j.atomic():
+                    if intent["status"] == "done":
+                        # Completed without counting its own fills: reopen; the
+                        # next run re-checks holdings and money before acting.
+                        intent.update(status="buying", completed_at=None, completed_by=None)
+                        self._save_intent(intent)
+                        self.j.event("switch_reopened", {"id": intent["id"], "missing": [r["id"] for r, _ in missing]}, now)
+                    for r, payload in missing:
+                        result = json.loads(r["result"] or "{}")
+                        self._switch_fill(r, payload, money(r["filled"] or result.get("filled", 0)),
+                                          result.get("state", "filled"), now)
+                        self.j.event("effects_replayed", {"action": r["id"], "what": "switch"}, now)
+        if self.tax_plan is not None:
+            open_ids = {row[0] for row in self.j.db.execute("SELECT action_id FROM tax_inprogress")}
+            for r in done:
+                if r["id"] not in open_ids:
+                    continue
+                payload, result = json.loads(r["payload"]), json.loads(r["result"] or "{}")
+                receipt = json.loads(r["receipt"] or "{}")
+                with self.j.atomic():
+                    if r["kind"] == "order":
+                        filled = money(r["filled"] or result.get("filled", 0))
+                        self.tax_plan.finish_sell(r["id"], filled * money(payload["price"]) * (1 - self.cfg.fee_buffer), now)
+                    else:
+                        self.tax_plan.finish_fx_out(r["id"], money(payload["usd"]), money(receipt.get("krw", "0")), now)
+                    self.j.event("effects_replayed", {"action": r["id"], "what": "tax"}, now)
+
+    def _release_orphans(self, now):
+        """In-progress tax reservations whose request can no longer execute:
+        provably unsent, refused, rejected, operator-resolved, or no request row
+        at all. Requests that may have executed (submitting/unknown/live) keep
+        their reservation until reconciled with the broker."""
+        if self.tax_plan is None:
+            return
+        for action_id, krw in self.j.db.execute("SELECT action_id, krw_equiv FROM tax_inprogress").fetchall():
+            status = self.j.status(action_id)
+            if status is None or status in (NOT_SENT, REFUSED, REJECTED, "operator_resolved"):
+                with self.j.atomic():
+                    self.tax_plan.cancel_progress(action_id, now, reason=f"request {status or 'missing'}")
+
     def _order_status(self, row, receipt, now, session):
         """Order state for settling. A known order merely not yet shown as terminal
         (PendingConfirmation) stays a hold across nights and holidays; it locks only
@@ -608,7 +702,7 @@ class Engine:
             raise
         if self.j.meta("pending:" + row["id"]) is not None:
             self.j.db.execute("DELETE FROM metadata WHERE key=?", ("pending:" + row["id"],))
-            self.j.db.commit()
+            self.j.commit()
         return status
 
     def _reconcile(self, snap, now, *, target=None, may_cancel=True, session=None):
@@ -618,8 +712,13 @@ class Engine:
             if (now - datetime.fromisoformat(row["created"])).total_seconds() < PREPARED_STALE_SECONDS:
                 raise Stop("Another process may be about to send a request; waiting")
             # An earlier process stopped before its send-start record: never sent.
-            if self.j.transition(row["id"], PREPARED, NOT_SENT):
-                self.j.update(row["id"], NOT_SENT, result={"reason": "send never started before restart"})
+            with self.j.atomic():
+                if self.j.transition(row["id"], PREPARED, NOT_SENT):
+                    self.j.update(row["id"], NOT_SENT, result={"reason": "send never started before restart"})
+                    if self.tax_plan is not None:
+                        self.tax_plan.cancel_progress(row["id"], now, reason="send never started")
+        self._replay_effects(now)
+        self._release_orphans(now)
         pending = self.j.pending()
         pending.sort(key=lambda r: 0 if r["kind"] == "cancel" else 1)
         for row in pending:
@@ -641,10 +740,10 @@ class Engine:
                                    now, row["id"], required="Compare the FX history with balances in the broker app")
                     return "waiting: reverse FX balance reflection"
                 self._forget("reflect:" + row["id"])
-                self.j.update(row["id"], DONE, result={"balance_confirmed": True})
-                if self.tax_plan is not None:
-                    self.tax_plan.finish_fx_out(row["id"], money(payload["usd"]), received, now)
-                    self.j.db.commit()
+                with self.j.atomic():          # status and reserve move commit together
+                    self.j.update(row["id"], DONE, result={"balance_confirmed": True})
+                    if self.tax_plan is not None:
+                        self.tax_plan.finish_fx_out(row["id"], money(payload["usd"]), received, now)
                 continue
             if row["kind"] == "fx":
                 # Require balance reflection before anything else. Balances are
@@ -696,13 +795,10 @@ class Engine:
                                    now, row["id"], required="Compare holdings and fills in the broker app")
                     return "waiting: holdings reflection"
                 self._forget("hold:" + row["id"])
-                self.j.update(row["id"], DONE, filled=str(filled),
-                              result={"filled": str(filled), "state": status.state, "raw": status.raw})
-                self._switch_fill(row, payload, filled, status.state, now)
-                if payload.get("tax_year") and self.tax_plan is not None:
-                    # Conservative: a sell fills at or above its limit; fee buffer deducted.
-                    self.tax_plan.finish_sell(row["id"], filled * money(payload["price"]) * (1 - self.cfg.fee_buffer), now)
-                    self.j.db.commit()
+                with self.j.atomic():          # status and every derived book entry commit together
+                    self.j.update(row["id"], DONE, filled=str(filled),
+                                  result={"filled": str(filled), "state": status.state, "raw": status.raw})
+                    self._order_effects(row["id"], payload, filled, status.state, now)
                 if status.state == "rejected":
                     self._lock("order_rejected_after_acceptance", "Accepted order later rejected; review " + row["id"],
                                now, row["id"], required="Read the rejection reason in the broker app")
@@ -840,6 +936,8 @@ class Engine:
         intent = self.j.meta("switch_intent")
         if not intent or intent["status"] in ("done", "superseded") or row["id"] in intent["counted"]:
             return
+        if payload.get("switch") and payload["switch"] != intent["id"]:
+            return
         price, side, symbol = money(payload["price"]), payload["side"], payload["symbol"]
         if side == "sell" and symbol in intent["from"]:
             # Conservative: a sell fills at or above its limit; fee buffer deducted.
@@ -848,7 +946,6 @@ class Engine:
             if year is not None and value > 0:
                 # The installment gap comes out of the switch proceeds; no separate tax sell.
                 value -= self.tax_plan.earmark_proceeds(year, value, now)
-                self.j.db.commit()
             intent["proceeds"] = str(money(intent["proceeds"]) + value)
         elif side == "buy" and symbol == intent["to"]:
             # Conservative: a buy fills at or below its limit; fee buffer added.
@@ -966,7 +1063,7 @@ class Engine:
         krw, usd = self._reserved(now)
         self.tax_plan.allocate_cash(year, max(D(0), snap.krw - self.cfg.krw_reserve - krw),
                                     max(D(0), snap.usd - self.cfg.usd_reserve - usd), now)
-        self.j.db.commit()
+        self.j.commit()
 
     def _tax_sell(self, snap, target, signal_date, session, now, deadline):
         """A whole-share sell of the held strategy symbol for the installment gap,
@@ -995,11 +1092,9 @@ class Engine:
             return None
         def prepared(action):
             self.tax_plan.start(year, action, "sell", plan["proceeds_krw"], plan["qty"] * price, now)
-            self.j.db.commit()
 
         def abandoned(action):
-            self.tax_plan.cancel_progress(action)
-            self.j.db.commit()
+            self.tax_plan.cancel_progress(action, now, reason="not sent or refused")
         return self._send_order(symbol=target, side="sell", qty=plan["qty"], quote=quote, price=price, snap=snap,
                                 target=target, signal_date=signal_date, session=session, now=now, deadline=deadline,
                                 extra={"tax_year": year, "tax_basis": plan["basis"],
@@ -1038,11 +1133,9 @@ class Engine:
                 raise Aborted("FX quote no longer valid at send time: " + str(exc)) from exc
         def prepared(action):
             self.tax_plan.start(year, action, "fx_out", self.tax_plan.usd_krw(usd) or 0, usd, now)
-            self.j.db.commit()
 
         def abandoned(action):
-            self.tax_plan.cancel_progress(action)
-            self.j.db.commit()
+            self.tax_plan.cancel_progress(action, now, reason="not sent or refused")
         return self._submit("fx_out", {"usd": str(usd), "krw_before": str(snap.krw), "rate": str(quote.ask),
                                        "quote_time": quote.server_time, "tax_year": year},
                             self._current(now), session, lambda: self.broker.exchange_to_krw(usd, quote), guard,
@@ -1162,9 +1255,12 @@ class Engine:
                     return "waiting: sale proceeds not yet orderable"
                 self._complete_switch(target, now, "open window")
                 return "idle: insufficient USD for one share"
+        intent = self.j.meta("switch_intent")
+        extra = ({"switch": intent["id"]} if intent and intent["status"] not in ("done", "superseded")
+                 and intent["to"] == target else None)
         return self._send_order(symbol=symbol, side=side, qty=qty, quote=quote, price=price, snap=snap,
                                 target=target, signal_date=signal_date, session=session, now=now,
-                                deadline=trade_deadline)
+                                deadline=trade_deadline, extra=extra)
 
 
 def _ref(receipt):
