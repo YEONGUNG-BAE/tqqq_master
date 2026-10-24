@@ -948,6 +948,13 @@ class Engine:
         self.j.put_meta("switch_history", history[-30:])
 
     def _track_switch(self, snap, target, signal_date, session, now):
+        # Superseding the old intent (carrying its unspent money) and starting the
+        # new one commit together, so a restart in between can never lose or
+        # double the carried budget.
+        with self.j.atomic():
+            return self._track_switch_locked(snap, target, signal_date, session, now)
+
+    def _track_switch_locked(self, snap, target, signal_date, session, now):
         intent = self.j.meta("switch_intent")
         if intent and intent["status"] in ("done", "superseded"):
             intent = None
