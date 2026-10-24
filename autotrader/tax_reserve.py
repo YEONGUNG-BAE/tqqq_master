@@ -54,6 +54,9 @@ CREATE TABLE IF NOT EXISTS tax_issues(
 CREATE TABLE IF NOT EXISTS tax_corrections(
   seq INTEGER PRIMARY KEY AUTOINCREMENT, fill_key TEXT NOT NULL, field TEXT NOT NULL, old TEXT, new TEXT,
   reason TEXT NOT NULL, at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS tax_issue_resolutions(
+  issue_key TEXT PRIMARY KEY, resolved_at TEXT NOT NULL, basis TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS tax_migrations(name TEXT PRIMARY KEY, done_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS tax_deadlines(
   year INTEGER PRIMARY KEY, deadline TEXT NOT NULL, set_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS tax_moves(
@@ -63,33 +66,64 @@ CREATE TABLE IF NOT EXISTS tax_moves(
 COLUMNS = {"reserve_krw", "reserve_usd", "withdrawn_krw", "paid_krw", "sold_for_tax_krw"}
 
 
+EXTERNAL_FUNDS_V2 = "external_funds_v2"
+OTHER_MONEY = "payment (other money)"
+# Payments an older version recorded as 'outside': their source (external funds
+# or other money) is unknown. Newer 'other' payments are told apart by ref.
+LEGACY_UNKNOWN = f"from_state='outside' AND to_state='paid_krw' AND COALESCE(ref, '') <> '{OTHER_MONEY}'"
+
+
 def ensure_schema(db):
     db.executescript(SCHEMA)
-    have = {r[1] for r in db.execute("PRAGMA table_info(tax_external_funds)")}
-    if "deposited_krw" not in have:
-        # Additive migration. Money an older version moved from external funds
-        # into the account is known from its audit rows; payments it recorded as
-        # 'outside' cannot be split between external funds and other money, so
-        # they are flagged for the user instead of being guessed.
-        db.execute("ALTER TABLE tax_external_funds ADD COLUMN deposited_krw TEXT NOT NULL DEFAULT '0'")
-        db.execute("ALTER TABLE tax_external_funds ADD COLUMN paid_ext_krw TEXT NOT NULL DEFAULT '0'")
+    if not db.execute("SELECT 1 FROM tax_migrations WHERE name=?", (EXTERNAL_FUNDS_V2,)).fetchone():
+        _migrate_external_funds(db)
+    db.commit()
+
+
+def _migrate_external_funds(db):
+    """Deposit tracking for external funds, applied all at once: both columns,
+    the rebuilt deposits with their audit rows, the payment-source flags and
+    the completion mark commit together or not at all (SQLite DDL is
+    transactional). Each column is checked on its own and every data step is
+    idempotent, so a database half-migrated by an earlier version is completed."""
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        if db.execute("SELECT 1 FROM tax_migrations WHERE name=?", (EXTERNAL_FUNDS_V2,)).fetchone():
+            db.execute("COMMIT")                         # another process finished it meanwhile
+            return
+        have = {r[1] for r in db.execute("PRAGMA table_info(tax_external_funds)")}
+        for column in ("deposited_krw", "paid_ext_krw"):
+            if column not in have:
+                db.execute(f"ALTER TABLE tax_external_funds ADD COLUMN {column} TEXT NOT NULL DEFAULT '0'")
         at = datetime.now().isoformat()
+        # Money moved from external funds into the account is known from its
+        # audit rows (older versions counted it both as secured and as reserve).
         moved = {}
         for year, amount in db.execute("SELECT year, amount FROM tax_moves WHERE from_state='external_secured' "
                                        "AND to_state='reserve_krw'").fetchall():
             moved[year] = moved.get(year, D(0)) + D(amount)
         for year, amount in moved.items():
-            if db.execute("UPDATE tax_external_funds SET deposited_krw=? WHERE year=?", (str(amount), year)).rowcount:
-                db.execute("INSERT INTO tax_corrections(fill_key, field, old, new, reason, at) VALUES (?,?,?,?,?,?)",
-                           (f"external_funds:{year}", "deposited_krw", "0", str(amount),
-                            "reconstructed from external_secured->reserve_krw moves: the older version counted "
-                            "deposited external money both as secured and as reserve", at))
-        for (year,) in db.execute("SELECT DISTINCT year FROM tax_moves WHERE from_state='outside' AND to_state='paid_krw'"):
+            row = db.execute("SELECT deposited_krw FROM tax_external_funds WHERE year=?", (year,)).fetchone()
+            if row is None or D(row[0]) == amount:
+                continue
+            db.execute("UPDATE tax_external_funds SET deposited_krw=? WHERE year=?", (str(amount), year))
+            db.execute("INSERT INTO tax_corrections(fill_key, field, old, new, reason, at) VALUES (?,?,?,?,?,?)",
+                       (f"external_funds:{year}", "deposited_krw", row[0], str(amount),
+                        "reconstructed from external_secured->reserve_krw moves: the older version counted "
+                        "deposited external money both as secured and as reserve", at))
+        # 'outside' payments cannot be split between external funds and other
+        # money, so they are flagged for the user instead of being guessed.
+        for (year,) in db.execute(f"SELECT DISTINCT year FROM tax_moves WHERE {LEGACY_UNKNOWN}").fetchall():
             db.execute("INSERT OR IGNORE INTO tax_issues VALUES (?,?,?,?)",
                        (f"payment_source:{year}", "payment_source_unknown",
-                        f"{year}: payments recorded by an older version may have come from external funds; "
-                        "re-enter them with /tax_paid_fix and a source", datetime.now().isoformat()))
-    db.commit()
+                        f"{year}: payments recorded by an older version have an unknown source (external funds "
+                        f"or other money); send /tax_paid_fix 0 {year}, then re-enter each payment with "
+                        f"/tax_paid amount 출금|외부|기타 {year}", at))
+        db.execute("INSERT INTO tax_migrations VALUES (?,?)", (EXTERNAL_FUNDS_V2, at))
+        db.execute("COMMIT")
+    except BaseException:
+        db.execute("ROLLBACK")
+        raise
 
 
 class TaxPlan:
@@ -552,9 +586,10 @@ class TaxPlan:
                             (str(ext["secured"] - amount), str(ext["paid_ext"] + amount), now.isoformat(), int(year)))
             self._move(year, now, "external_secured", "paid_krw", amount, "KRW", "payment (external)")
         elif source == "other":
-            self._move(year, now, "outside", "paid_krw", amount, "KRW", "payment (other money)")
+            self._move(year, now, "outside", "paid_krw", amount, "KRW", OTHER_MONEY)
         else:
             raise ValueError("unknown payment source")
+        self.review_payment_source(year, now)
         return source
 
     def correct_payment(self, year, new_total, now):
@@ -566,6 +601,42 @@ class TaxPlan:
             self._move(year, now, "correction", "paid_krw", new_total - current, "KRW", "payment correction")
         elif new_total < current:
             self._move(year, now, "paid_krw", "correction", current - new_total, "KRW", "payment correction")
+        self.review_payment_source(year, now)
+
+    def unknown_payment(self, year):
+        """Upper bound of the paid total that may still be an older version's
+        payment of unknown source. Replayed in order: such a payment adds to it;
+        a correction caps it at the paid total left (which part was removed is
+        not known); payments with a named source leave it unchanged."""
+        unknown = paid = D(0)
+        for from_state, to_state, amount, ref in self.db.execute(
+                "SELECT from_state, to_state, amount, ref FROM tax_moves WHERE year=? AND "
+                "(from_state='paid_krw' OR to_state='paid_krw') ORDER BY seq", (int(year),)):
+            if to_state == "paid_krw":
+                paid += D(amount)
+                if from_state == "outside" and (ref or "") != OTHER_MONEY:
+                    unknown += D(amount)
+            else:
+                paid -= D(amount)
+                unknown = min(unknown, paid)
+        return unknown
+
+    def payment_source_open(self, year):
+        key = f"payment_source:{int(year)}"
+        return bool(self.db.execute("SELECT 1 FROM tax_issues WHERE issue_key=? AND issue_key NOT IN "
+                                    "(SELECT issue_key FROM tax_issue_resolutions)", (key,)).fetchone())
+
+    def review_payment_source(self, year, now):
+        """Close the year's payment-source issue once no paid money of unknown
+        source can remain; the resolution row is the audit record. Returns True
+        when it was closed by this call."""
+        if not self.payment_source_open(year) or self.unknown_payment(year) > 0:
+            return False
+        self.db.execute("INSERT INTO tax_issue_resolutions VALUES (?,?,?)",
+                        (f"payment_source:{int(year)}", now.isoformat(),
+                         "no paid amount of unknown source can remain after the user's correction; every "
+                         "remaining payment was entered with a named source"))
+        return True
 
     def release(self, year, now):
         """User-confirmed: remaining reserves return to general cash."""

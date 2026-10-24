@@ -23,6 +23,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_DOWN
+from functools import lru_cache
 
 D = Decimal
 FX_SANE = (D(500), D(3000))          # KRW per USD outside this range = unit error
@@ -46,6 +47,8 @@ CREATE TABLE IF NOT EXISTS tax_corrections(
   reason TEXT NOT NULL, at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS tax_issues(
   issue_key TEXT PRIMARY KEY, kind TEXT NOT NULL, detail TEXT NOT NULL, at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS tax_issue_resolutions(
+  issue_key TEXT PRIMARY KEY, resolved_at TEXT NOT NULL, basis TEXT NOT NULL);
 """
 
 
@@ -59,7 +62,8 @@ class TaxSettings:
         "rate": "user setting; 20% national + 2% local as configured",
         "cost_method": "FIFO by fill time; confirm against the broker's tax report",
         "fx": "KRW per USD base rate (deal_stnd_exrt) on the computed settlement date",
-        "settlement": "computed US T+1 business day from the exchange calendar (not broker-reported)"})
+        "settlement": "computed T+N (by trade-date era) on NYSE sessions that are Federal Reserve business days; "
+                      "broker-confirmed dates take precedence"})
 
     @classmethod
     def from_config(cls, raw):
@@ -83,7 +87,39 @@ def ensure_schema(db):
 # US equity settlement cycles (SEC): T+3 from 1995-06-07, T+2 from 2017-09-05,
 # T+1 from 2024-05-28 (trade date). Earlier trades: no verified rule here.
 SETTLEMENT_CYCLES = (("2024-05-28", 1), ("2017-09-05", 2), ("1995-06-07", 3))
-SETTLEMENT_BASIS = "computed from the exchange calendar and the SEC cycle for the trade date (not broker-reported)"
+SETTLEMENT_BASIS = ("computed on the settlement calendar: NYSE sessions that are also Federal Reserve "
+                    "business days (not broker-reported)")
+# Sources this code (or an older version of it) produced. Only these are ever
+# recomputed; a broker-confirmed or user-entered date is never overwritten.
+COMPUTED_SOURCES = ("computed", "unverified", "calendar too short")
+
+
+def fed_holidays(year):
+    """Federal Reserve holidays: a Sunday holiday moves to Monday; on a Saturday
+    holiday the Reserve Banks stay open on Friday."""
+    def nth(month, weekday, n):
+        first = date(year, month, 1)
+        return first + timedelta(days=(weekday - first.weekday()) % 7 + 7 * (n - 1))
+
+    def last(month, weekday):
+        end = date(year, month + 1, 1) - timedelta(days=1)
+        return end - timedelta(days=(end.weekday() - weekday) % 7)
+    fixed = [date(year, 1, 1), date(year, 7, 4), date(year, 11, 11), date(year, 12, 25)]
+    if year >= 2021:
+        fixed.append(date(year, 6, 19))
+    days = {d + timedelta(days=1) if d.weekday() == 6 else d for d in fixed if d.weekday() != 5}
+    days |= {nth(2, 0, 3), last(5, 0), nth(9, 0, 1), nth(10, 0, 2), nth(11, 3, 4)}
+    if year >= 1986:
+        days.add(nth(1, 0, 3))
+    return {d.isoformat() for d in days}
+
+
+@lru_cache(maxsize=1)
+def unscheduled_closures():
+    """NYSE closures outside its regular holiday rules (e.g. 2001-09-11,
+    2025-01-09). Whether securities settled on such days is not known here."""
+    import exchange_calendars as xc
+    return frozenset(d.date().isoformat() for d in xc.get_calendar("XNYS").adhoc_holidays)
 
 
 def settlement_sessions(first, last):
@@ -97,9 +133,11 @@ def settlement_sessions(first, last):
 
 
 def settlement_date(trade_date, sessions):
-    """(settlement date, source). None when the calendar does not cover the
-    trade, the trade date is not a session, or no verified cycle applies:
-    a far later session is never used as a stand-in."""
+    """(settlement date, source). Settlement days are NYSE sessions that are
+    also Federal Reserve business days (Columbus and Veterans Day trade but do
+    not settle). None when the calendar does not cover the trade, the trade
+    date is not a session, no verified cycle applies, or an unscheduled market
+    closure falls inside the window: a date is never guessed."""
     if not sessions or trade_date < sessions[0] or trade_date > sessions[-1]:
         return None, "unverified: calendar does not cover the trade date"
     if trade_date not in set(sessions):
@@ -107,16 +145,21 @@ def settlement_date(trade_date, sessions):
     cycle = next((n for start, n in SETTLEMENT_CYCLES if trade_date >= start), None)
     if cycle is None:
         return None, "unverified: no verified settlement cycle for this date"
-    later = [d for d in sessions if d > trade_date]
+    holidays = {}
+    later = [d for d in sessions if d > trade_date
+             and d not in holidays.setdefault(d[:4], fed_holidays(int(d[:4])))]
     if len(later) < cycle:
         return None, "unverified: calendar too short after the trade date"
-    return later[cycle - 1], f"computed T+{cycle} ({SETTLEMENT_BASIS})"
+    settle = later[cycle - 1]
+    if any(trade_date < d <= settle for d in unscheduled_closures()):
+        return None, "unverified: an unscheduled market closure falls inside the settlement window"
+    return settle, f"computed T+{cycle} ({SETTLEMENT_BASIS})"
 
 
 def settlement_mismatches(db, now):
     """Read-only: (fill key, stored date, correct date or None, basis) for every
-    stored fill whose settlement date differs from the era rules on a calendar
-    covering every stored trade."""
+    stored fill whose COMPUTED settlement date differs from the rules on a
+    calendar covering every stored trade. Confirmed dates are never listed."""
     if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='tax_fills'").fetchone() is None:
         return []
     rows = db.execute("SELECT fill_key, trade_date, settle_date, settle_source FROM tax_fills").fetchall()
@@ -124,6 +167,8 @@ def settlement_mismatches(db, now):
     sessions = settlement_sessions(min(trades), now.date().isoformat()) if trades else []
     found = []
     for key, trade, stored, source in rows:
+        if source and not str(source).startswith(COMPUTED_SOURCES):
+            continue                                     # broker-confirmed or user-entered: kept as is
         settle, basis = settlement_date(trade, sessions)
         if settle == stored and (settle is not None or str(source or "").startswith("unverified")):
             continue
@@ -201,7 +246,9 @@ def compute(db, settings, holdings=None):
              for r in db.execute("SELECT fill_key, symbol, side, qty, price, amount, fee, fee_source, filled_at, "
                                  "trade_date, settle_date, settle_source, fx, fx_source FROM tax_fills "
                                  "ORDER BY filled_at, fill_key")]
-    issues = [dict(kind=r[0], detail=r[1]) for r in db.execute("SELECT kind, detail FROM tax_issues ORDER BY at")]
+    issues = [dict(kind=r[0], detail=r[1]) for r in db.execute(
+        "SELECT kind, detail FROM tax_issues WHERE issue_key NOT IN (SELECT issue_key FROM tax_issue_resolutions) "
+        "ORDER BY at")]
     lots, years = {}, {}
 
     def year_entry(y):

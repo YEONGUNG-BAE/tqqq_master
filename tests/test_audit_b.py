@@ -150,21 +150,25 @@ class TelegramConcurrencyTests(unittest.TestCase):
         errors = []
 
         def run():
-            journal, plan = self.receiver()
+            journal = None
             try:
+                journal, plan = self.receiver()
                 got = telegram_bot.fetch(journal, self.transport)
-                barrier.wait()
+                barrier.wait(timeout=30)              # a failed peer breaks the barrier instead of hanging
                 telegram_bot.process(journal, got, tax.TaxSettings(), JAN, self.transport,
                                      handlers=telegram_bot.plan_handlers(plan))
             except Exception as exc:
                 errors.append(exc)
+                barrier.abort()
             finally:
-                journal.db.close()
+                if journal is not None:
+                    journal.db.close()
         threads = [threading.Thread(target=run) for _ in range(2)]
         for t in threads:
             t.start()
         for t in threads:
-            t.join()
+            t.join(timeout=60)
+        self.assertFalse(any(t.is_alive() for t in threads))
         self.assertEqual(errors, [])
         self.assertEqual(self.paid(), D(105_000))
         journal = Journal(self.path)

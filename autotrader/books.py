@@ -7,9 +7,10 @@ on their own, idempotently and with an audit record:
                                the switch intent; a falsely completed intent reopens
   done_without_tax_effects     next `run`: the tax sell / reverse FX result is booked
   orphan_reservations          next `run`: in-progress tax money returns to its state
-  external_funds_migration     next `run`/`tax`: deposited external money rebuilt from
-                               its audit moves (the older version counted it twice);
-                               'outside' payments are flagged under needs_user
+  external_funds_migration     next `run`/`tax`: both columns, deposited external money
+                               rebuilt from its audit moves (the older version counted
+                               it twice) and the payment-source flags, in one transaction;
+                               a half-applied table is completed
   settlement_dates             next ledger sync (`tax-sync` or the daily housekeeping
                                sync): date recomputed, that row's FX cleared and fetched again
 
@@ -19,8 +20,10 @@ Never repaired automatically, because the evidence is not enough:
                                match yet: the existing lock rules apply, settle with
                                `resolve` after checking the broker app
   needs_user                   e.g. payments an older version recorded as 'outside'
-                               (external funds or other money?): re-enter with
-                               /tax_paid_fix and /tax_paid ... 출금|외부|기타
+                               (external funds or other money?): /tax_paid_fix 0 <year>,
+                               then /tax_paid ... 출금|외부|기타 <year>; the issue
+                               closes, with a resolution row, once no money of
+                               unknown source can remain
 """
 from __future__ import annotations
 
@@ -35,10 +38,14 @@ def _count(db, sql, *args):
 
 
 def _unmigrated_external(db):
-    """Years in an external-funds table that predates deposit tracking."""
+    """Years in an external-funds table whose deposit-tracking migration is not
+    marked complete (missing either column, or applied only in part)."""
     if not _table(db, "tax_external_funds"):
         return []
-    if "deposited_krw" in {r[1] for r in db.execute("PRAGMA table_info(tax_external_funds)")}:
+    columns = {r[1] for r in db.execute("PRAGMA table_info(tax_external_funds)")}
+    done = _table(db, "tax_migrations") and db.execute(
+        "SELECT 1 FROM tax_migrations WHERE name='external_funds_v2'").fetchone()
+    if done and {"deposited_krw", "paid_ext_krw"} <= columns:
         return []
     return [y for (y,) in db.execute("SELECT year FROM tax_external_funds ORDER BY year")]
 
@@ -52,7 +59,10 @@ def diagnose(journal, now):
                  "tax_reservation": r["id"] in held} for r in journal.with_status(*PENDING)]
     needs_user = []
     if _table(db, "tax_issues"):
-        needs_user = [{"kind": k, "detail": d} for k, d in db.execute("SELECT kind, detail FROM tax_issues ORDER BY at")]
+        resolved = ("WHERE issue_key NOT IN (SELECT issue_key FROM tax_issue_resolutions)"
+                    if _table(db, "tax_issue_resolutions") else "")
+        needs_user = [{"kind": k, "detail": d}
+                      for k, d in db.execute(f"SELECT kind, detail FROM tax_issues {resolved} ORDER BY at")]
     events = {}
     for (category,) in db.execute("SELECT category FROM events WHERE category IN ('effects_replayed', 'switch_reopened')"):
         events[category] = events.get(category, 0) + 1

@@ -340,21 +340,31 @@ def plan_handlers(plan):
         amount = parse_amount(rest[0]) if rest else None
         if amount is None:
             return usage("/tax_paid")
+        was_open = plan.payment_source_open(year)
         try:
             used = plan.record_payment(year, amount, ctx.now, source=source)
         except ValueError:
             return ("납부 출처가 모호하거나 금액이 출처 잔액보다 큽니다. 출처를 붙여 다시 보내세요: "
                     "/tax_paid 금액 출금|외부|기타 [연도]")
         label = {"withdrawn": "세금용 출금분", "external": "외부 확보분", "other": "기타 자금"}[used]
-        return ack(ctx, f"납부 완료({label}에서)", year) + "\n남은 준비금은 /tax_release 확인 으로만 일반 현금으로 돌립니다."
+        return (ack(ctx, f"납부 완료({label}에서)", year) + "\n남은 준비금은 /tax_release 확인 으로만 일반 현금으로 돌립니다."
+                + source_note(year, was_open))
+
+    def source_note(year, was_open):
+        """Where the year's payment-source issue stands after a payment change."""
+        if plan.payment_source_open(year):
+            return (f"\n이전 버전이 출처 없이 기록한 납부가 남아 있을 수 있어 세금 목적 매도 보류를 유지합니다. "
+                    f"/tax_paid_fix 0 {year} 후 실제 납부를 출처와 함께 /tax_paid 로 다시 입력하세요.")
+        return "\n출처 미확인 납부 문제를 해결 처리했습니다(감사 기록 남김)." if was_open else ""
 
     def paid_fix(ctx, args):
         rest, year = take_year(args, ctx, planning=False)
         amount = parse_amount(rest[0]) if rest else None
         if amount is None:
             return usage("/tax_paid_fix")
+        was_open = plan.payment_source_open(year)
         plan.correct_payment(year, amount, ctx.now)
-        return ack(ctx, "납부액 정정(감소분을 자동 재투자하지 않음)", year)
+        return ack(ctx, "납부액 정정(감소분을 자동 재투자하지 않음)", year) + source_note(year, was_open)
 
     def release(ctx, args):
         rest, year = take_year(args, ctx, planning=False)
