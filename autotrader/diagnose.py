@@ -18,7 +18,7 @@ from datetime import timedelta
 from decimal import ROUND_DOWN
 from pathlib import Path
 
-from .core import (STRATEGY_SYMBOLS, D, Quote, Stop, buy_quantity, check_fx_quote, check_quote, fx_amount,
+from .core import (STRATEGY_SYMBOLS, D, Quote, Stop, buy_quantity, check_fx_quote, check_quote, check_side, fx_amount,
                    fx_spent, limit_price, money, symbols_to_sell, unsupported_holdings)
 from .instruments import KNOWN as KNOWN_ROUTES
 from .history import read_history, refresh
@@ -263,7 +263,7 @@ def observation_plan(*, snap, target, cfg, fx_quote, fx_error, quotes, now, spen
             proceeds += value
             entry.update(status="planned_sell", quantity=str(qty), limit_price=str(price), price_source=source,
                          estimated_proceeds_after_fee_buffer=str(value),
-                         engine_quote_check=_quote_check(quotes.get(symbol), now, cfg))
+                         engine_quote_check=_quote_check(quotes.get(symbol), now, cfg, "sell"))
         sells.append(entry)
     plan["switch_sells"] = sells
     plan["target"] = target
@@ -274,7 +274,7 @@ def observation_plan(*, snap, target, cfg, fx_quote, fx_error, quotes, now, spen
         return plan
     price = limit_price(quote, "buy", cfg)
     buy = {"symbol": target, "limit_price": str(price), "price_source": source,
-           "engine_quote_check": _quote_check(quotes.get(target), now, cfg)}
+           "engine_quote_check": _quote_check(quotes.get(target), now, cfg, "buy")}
 
     def size(usd, power):
         qty = buy_quantity(usd, power, price, cfg)
@@ -291,11 +291,13 @@ def observation_plan(*, snap, target, cfg, fx_quote, fx_error, quotes, now, spen
     return plan
 
 
-def _quote_check(entry, now, cfg):
+def _quote_check(entry, now, cfg, side=None):
     if not entry or entry[0] is None:
         return (entry[2] if entry else None) or "시세 없음"
     try:
         check_quote(entry[0], now, cfg)
+        if side:
+            check_side(entry[0], side)
         return "pass"
     except Stop as exc:
         return str(exc)

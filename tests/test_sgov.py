@@ -127,7 +127,9 @@ class OrderFake(FakeMeritz):
         return super().__call__(method, path, query, body, token=token, form=form)
 
 
-class MeritzSgovPathTests(unittest.TestCase):
+class MeritzBase(unittest.TestCase):
+    """Fake transport and network block; holds no tests."""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -149,6 +151,8 @@ class MeritzSgovPathTests(unittest.TestCase):
         client.sleep = lambda s: None
         return Meritz(client, self.journal, markets)
 
+
+class MeritzSgovPathTests(MeritzBase):
     def test_sgov_quote_and_order_use_the_confirmed_market_and_its_documented_exchange(self):
         from autotrader.meritz import KST
         fake = OrderFake(US_OPEN, US_OPEN.astimezone(KST).strftime("%Y%m%d"))
@@ -179,8 +183,7 @@ class MeritzSgovPathTests(unittest.TestCase):
         with self.assertRaisesRegex(Stop, "mismatch"):
             self.broker(fake, {"SGOV": wrong}).quote("SGOV", US_OPEN)
         prices = fake.responses["/market/v1/overseas/prices"]
-        for field, value, message in (("shnu_oder_qty_unit", "10", "quantity unit"),
-                                      ("sell_only", "1", "sell-only"), ("crnc_code", "EUR", "currency")):
+        for field, value, message in (("crnc_code", "EUR", "currency"), ("vcm_stat_cls_code", "Y", "restriction")):
             fake.responses["/market/v1/overseas/prices"] = (
                 lambda q, f=field, v=value: dict(prices(q), data=dict(prices(q)["data"], **{f: v})))
             with self.assertRaisesRegex(Stop, message):
@@ -270,3 +273,113 @@ class DoctorSgovTests(Harness):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SellOnlyTests(unittest.TestCase):
+    """`sell_only` (spec: 매도만 가능한 종목) blocks buys only; the exit sell
+    and the return sell still go out. Real halts still stop both sides."""
+
+    def setUp(self):
+        from test_fault_injection import FaultBroker
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.journal = Journal(Path(self.tmp.name) / "j.sqlite")
+        self.addCleanup(self.journal.db.close)
+        self.broker = FaultBroker(usd="2000")
+        self.engine = Engine(self.broker, self.journal, Settings(mode="paper"))
+        self.sell_only = set()
+        original = self.broker.quote
+
+        def quote(symbol, now):
+            q = original(symbol, now)
+            if symbol in self.sell_only:
+                q.blocked = (("buy", "sell-only at the broker"),)
+            return q
+        self.broker.quote = quote
+
+    def tick(self, target, at=0, **kw):
+        from datetime import timedelta
+        args = dict(SIGNAL, target=target, now=US_OPEN + timedelta(seconds=at), may_trade=True)
+        args.update(kw)
+        return self.engine.tick(**args)
+
+    def test_tqqq_exit_sell_goes_out_and_the_sgov_buy_is_held(self):
+        self.broker.positions = {RISK_SYMBOL: D(10)}
+        self.sell_only = {RISK_SYMBOL, DEFENSIVE_SYMBOL}
+        self.assertEqual(self.tick(DEFENSIVE_SYMBOL), "submitted: order")
+        self.assertEqual(self.broker.calls[-1], ("sell", RISK_SYMBOL, D(10)))
+        self.broker.fill(max(self.broker.orders))
+        self.tick(DEFENSIVE_SYMBOL, 10)
+        with self.assertRaisesRegex(Stop, "buy blocked: sell-only"):
+            self.tick(DEFENSIVE_SYMBOL, 20)
+        self.assertEqual([c for c in self.broker.calls if c[0] == "buy"], [])
+
+    def test_sgov_return_sell_goes_out_and_the_tqqq_buy_is_held(self):
+        self.broker.positions = {DEFENSIVE_SYMBOL: D(10)}
+        self.sell_only = {RISK_SYMBOL, DEFENSIVE_SYMBOL}
+        self.assertEqual(self.tick(RISK_SYMBOL), "submitted: order")
+        self.assertEqual(self.broker.calls[-1], ("sell", DEFENSIVE_SYMBOL, D(10)))
+        self.broker.fill(max(self.broker.orders))
+        self.tick(RISK_SYMBOL, 10)
+        with self.assertRaisesRegex(Stop, "buy blocked: sell-only"):
+            self.tick(RISK_SYMBOL, 20)
+        self.assertEqual([c for c in self.broker.calls if c[0] == "buy"], [])
+
+    def test_intraday_recovery_sell_is_allowed_while_sell_only(self):
+        from datetime import timedelta
+        self.broker.positions = {RISK_SYMBOL: D(10)}
+        self.sell_only = {RISK_SYMBOL}
+        recovery = dict(may_trade=False, may_manage_orders=True, may_recover=True,
+                        recovery_deadline=US_OPEN + timedelta(hours=6))
+        self.assertEqual(self.tick(DEFENSIVE_SYMBOL, 1000, **recovery), "submitted: order")
+        self.assertEqual(self.broker.calls[-1][:2], ("sell", RISK_SYMBOL))
+
+
+class MeritzSellOnlyTests(MeritzBase):
+    def with_fields(self, fake, **fields):
+        prices = fake.responses["/market/v1/overseas/prices"]
+        fake.responses["/market/v1/overseas/prices"] = lambda q: dict(prices(q), data=dict(prices(q)["data"], **fields))
+
+    def test_sell_only_and_units_are_per_side_and_halts_stop_both(self):
+        from autotrader.core import check_side
+        fake = OrderFake(US_OPEN, "20261015")
+        self.with_fields(fake, sell_only="1")
+        quote = self.broker(fake, {"SGOV": TEST_SGOV_MARKET}).quote(RISK_SYMBOL, US_OPEN)
+        check_side(quote, "sell")
+        with self.assertRaisesRegex(Stop, "buy blocked: sell-only"):
+            check_side(quote, "buy")
+        fake = OrderFake(US_OPEN, "20261015")
+        self.with_fields(fake, seln_oder_qty_unit="10")
+        quote = self.broker(fake, {}).quote(RISK_SYMBOL, US_OPEN)
+        check_side(quote, "buy")
+        with self.assertRaisesRegex(Stop, "sell blocked"):
+            check_side(quote, "sell")
+        fake = OrderFake(US_OPEN, "20261015")
+        self.with_fields(fake, issu_stat_cls_code="S")
+        with self.assertRaisesRegex(Stop, "trading restriction"):
+            self.broker(fake, {}).quote(RISK_SYMBOL, US_OPEN)
+
+    def test_live_path_sells_the_held_tqqq_when_it_is_sell_only(self):
+        from autotrader.meritz import KST
+        fake = OrderFake(US_OPEN, US_OPEN.astimezone(KST).strftime("%Y%m%d"))
+        fake.responses["/accounts/v1/me/overseas/holdings"] = dict(rsp_cd="5766", data=[holding(RISK_SYMBOL, 10)])
+        self.with_fields(fake, sell_only="1")
+        engine = Engine(self.broker(fake, {"SGOV": TEST_SGOV_MARKET}), self.journal,
+                        Settings(mode="live", reservation_lookup_start="20260101",
+                                 instrument_markets={"SGOV": TEST_SGOV_MARKET}))
+        result = engine.tick(**dict(SIGNAL, target=DEFENSIVE_SYMBOL, now=US_OPEN, may_trade=True))
+        self.assertEqual(result, "submitted: order")
+        path, body = fake.bodies[-1]
+        self.assertEqual((path, body["ovrs_stck_symb_iscd"], body["odqt"]),
+                         ("/trading/v1/overseas/orders/sell", RISK_SYMBOL, 10))
+
+
+class DoctorSellOnlyTests(Harness):
+    def test_plan_shows_the_buy_held_and_the_sell_planned_when_sell_only(self):
+        fake_prices = FakeMeritz(US_OPEN).responses["/market/v1/overseas/prices"]
+        report, _ = self.run_doctor(now=US_OPEN, **{
+            "/accounts/v1/me/overseas/holdings": dict(rsp_cd="5766", data=[holding(RISK_SYMBOL, 10)]),
+            "/market/v1/overseas/prices": lambda q: dict(fake_prices(q), data=dict(fake_prices(q)["data"], sell_only="1"))})
+        plan = report["plan"]
+        self.assertEqual(plan["target"], RISK_SYMBOL)                          # fixture signal: hold TQQQ
+        self.assertIn("buy blocked: sell-only", plan["buy"]["engine_quote_check"])

@@ -541,17 +541,21 @@ class Meritz:
             raise Stop("Quote symbol/currency mismatch")
         if px.get("issu_stat_cls_code", "N") not in {"N", ""} or px.get("vcm_stat_cls_code", "N") not in {"N", ""}:
             raise Stop("Security/market trading restriction")
+        # Side-specific limits are carried on the quote and checked per order:
+        # a sell-only security (spec: 매도만 가능한 종목) blocks buys, never the
+        # sale of shares already held. Whole shares only: a quantity unit other
+        # than 1 blocks that side.
+        blocked = []
         if str(px.get("sell_only", "0")).strip() not in {"0", ""}:
-            raise Stop("Security is sell-only at the broker")
-        # Whole shares only: a documented quantity unit other than 1 is not traded.
-        for unit in ("shnu_oder_qty_unit", "seln_oder_qty_unit"):
+            blocked.append(("buy", "sell-only at the broker"))
+        for side, unit in (("buy", "shnu_oder_qty_unit"), ("sell", "seln_oder_qty_unit")):
             if str(px.get(unit, "1")).strip() not in {"1", ""}:
-                raise Stop(f"Order quantity unit {px.get(unit)} is not one share")
+                blocked.append((side, f"order quantity unit {px.get(unit)} is not one share"))
         stamp = datetime.strptime(book["acpl_hour"], "%H%M%S").time()
         local = now.astimezone(NY)
         at = datetime.combine(local.date(), stamp, NY)
         tick = max(D("0.01"), money(px.get("shnu_aspr_unit", 0)), money(px.get("seln_aspr_unit", 0)))
-        return Quote(money(book["bidp1"]), money(book["askp1"]), tick, at)
+        return Quote(money(book["bidp1"]), money(book["askp1"]), tick, at, tuple(blocked))
 
     def quote(self, symbol, now):
         return self._quote_from(symbol, *self._quote_raw(symbol), now)

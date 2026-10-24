@@ -108,6 +108,13 @@ def check_quote(quote, now, cfg):
         raise Stop("Bid/ask spread exceeds configured limit")
 
 
+def check_side(quote, side):
+    """Direction-specific limits; halts and VCM already stopped the quote."""
+    reason = dict(getattr(quote, "blocked", ()) or ()).get(side)
+    if reason:
+        raise Stop(f"{side} blocked: {reason}")
+
+
 def limit_price(quote, side, cfg):
     price = (quote.ask * (1 + cfg.limit_padding) if side == "buy"
              else quote.bid * (1 - cfg.limit_padding))
@@ -155,6 +162,9 @@ class Quote:
     ask: Decimal
     tick: Decimal
     at: datetime
+    # Side-specific broker limits as ((side, reason), ...), e.g. a sell-only
+    # security blocks buys but still lets held shares be sold.
+    blocked: tuple = ()
 
 
 @dataclass
@@ -1026,6 +1036,7 @@ class Engine:
                     deadline, extra=None, prepared=None, abandoned=None):
         if self._past(deadline, now):
             return "idle: execution window closed during this run"
+        check_side(quote, side)                  # e.g. sell-only: buys held, sells allowed
         payload = dict(symbol=symbol, side=side, qty=str(qty), price=str(price),
                        held_before=str(snap.positions.get(symbol, D(0))), target=target, strategy=STRATEGY_VERSION,
                        signal_date=signal_date, quoted_at=quote.at.isoformat(), **(extra or {}))
