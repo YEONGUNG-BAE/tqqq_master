@@ -56,6 +56,12 @@ class Aborted(Stop):
     failed after token issue/pacing delays. Nothing was sent; not a failure."""
 
 
+class PendingConfirmation(Stop):
+    """The broker answered and the order is known, but it is not yet shown as
+    terminal (e.g. a past-session order without a confirmed cancel). Not a lookup
+    failure: passing nights or holidays alone never turns it into a lock."""
+
+
 class Locked(Stop):
     """Hard lock that automatic recovery cannot clear; persisted until a person
     reconciles the account and runs `unlock`/`resolve`. Reads continue."""
@@ -107,7 +113,9 @@ def limit_price(quote, side, cfg):
     return (price / quote.tick).quantize(D(1), rounding=ROUND_UP if side == "buy" else ROUND_DOWN) * quote.tick
 
 
-STRATEGY_SYMBOLS = frozenset({"QQQ", "TQQQ"})
+from .signal import DEFENSIVE_SYMBOL, RISK_SYMBOL  # noqa: E402  (single definition)
+
+STRATEGY_SYMBOLS = frozenset({RISK_SYMBOL, DEFENSIVE_SYMBOL})
 
 
 def unsupported_holdings(positions, cfg):
@@ -198,6 +206,11 @@ class Settings:
     max_consecutive_failures: int = 5         # refused/not-sent sends in a row -> hard lock
     retry_base_seconds: int = 15              # back-off after a refused/not-sent send
     retry_max_seconds: int = 120
+    # Same-session recovery of a confirmed switch after the open window (see
+    # WORK_STATUS.md). Limited to the switch's own holdings and sale proceeds.
+    intraday_recovery: bool = True
+    recovery_close_buffer_minutes: int = 10   # no new recovery order this close to the close
+    recovery_retry_seconds: int = 300         # minimum spacing between recovery orders
 
     def __post_init__(self):
         if self.mode not in {"observe", "paper", "live"}:
@@ -212,6 +225,8 @@ class Settings:
             raise ValueError("positive FX minimum and >=30s order timeout required")
         if self.max_orders_per_session < 1:
             raise ValueError("positive order cap required")
+        if self.recovery_close_buffer_minutes * 60 < self.order_timeout_seconds + 60 or self.recovery_retry_seconds < 60:
+            raise ValueError("recovery must stop early enough to time out and confirm a cancel before the close")
         if (self.unknown_outcome_lock_minutes < 30 or self.inconsistency_lock_minutes < 10
                 or self.max_consecutive_failures < 1 or self.retry_base_seconds < 1
                 or self.retry_max_seconds < self.retry_base_seconds):
@@ -545,7 +560,38 @@ class Engine:
                        required="Check the broker app for this request, then `resolve --action` and `unlock`")
         raise UnknownOutcome("Unresolved action " + row["id"] + "; reconciling with broker records, no resubmission")
 
-    def _reconcile(self, snap, now, *, target=None, may_cancel=True):
+    def _order_status(self, row, receipt, now, session):
+        """Order state for settling. A known order merely not yet shown as terminal
+        (PendingConfirmation) stays a hold across nights and holidays; it locks only
+        if it is still not terminal while a LATER regular session is running. Real
+        lookup failures keep the existing time-based lock."""
+        try:
+            status = self.broker.order_status(receipt)
+        except PendingConfirmation:
+            key = "pending:" + row["id"]
+            seen = self.j.meta(key) or {"sessions": []}
+            if session and not str(session).startswith("KRW:") and session != row["session"] \
+                    and session not in seen["sessions"]:
+                seen["sessions"].append(session)
+                self.j.put_meta(key, seen)
+            if seen["sessions"]:
+                self._lock("order_never_terminal",
+                           f"Order {row['id']} from session {row['session']} is still not shown as terminal "
+                           f"during session {seen['sessions'][0]}", now, row["id"],
+                           required="Check whether the order expired or was cancelled in the broker app, then `resolve --action`")
+            raise
+        except Stop:
+            age = (now - datetime.fromisoformat(row["created"])).total_seconds()
+            if age >= self.cfg.unknown_outcome_lock_minutes * 60:
+                self._lock("order_state_unresolved", f"State of order {row['id']} cannot be established",
+                           now, row["id"], required="Check the order in the broker app, then `resolve --action`")
+            raise
+        if self.j.meta("pending:" + row["id"]) is not None:
+            self.j.db.execute("DELETE FROM metadata WHERE key=?", ("pending:" + row["id"],))
+            self.j.db.commit()
+        return status
+
+    def _reconcile(self, snap, now, *, target=None, may_cancel=True, session=None):
         for row in self.j.with_status(PREPARED):
             if row["run_id"] == self.run_id:
                 continue
@@ -580,21 +626,14 @@ class Engine:
                 self.j.update(row["id"], DONE, result={"balance_confirmed": True})
                 continue
             if row["kind"] == "cancel":
-                state = self.broker.order_status(receipt["original"])
+                state = self._order_status(row, receipt["original"], now, session)
                 if state.state not in {"filled", "cancelled", "rejected"}:
                     return "waiting: cancellation confirmation"
                 self.j.update(row["id"], DONE, result=state.raw)
                 # The original accepted order remains pending until its fill and
                 # holdings are reconciled on the NEXT tick. Never buy here.
                 return "confirmed: cancellation"
-            try:
-                status = self.broker.order_status(receipt)
-            except Stop:
-                age = (now - datetime.fromisoformat(row["created"])).total_seconds()
-                if age >= self.cfg.unknown_outcome_lock_minutes * 60:
-                    self._lock("order_state_unresolved", f"State of order {row['id']} cannot be established",
-                               now, row["id"], required="Check the order in the broker app, then `resolve --action`")
-                raise
+            status = self._order_status(row, receipt, now, session)
             if status.state not in {"open", "filled", "cancelled", "rejected"}:
                 raise Stop("Unknown normalized order status")
             filled = money(status.filled)
@@ -624,6 +663,7 @@ class Engine:
                 self._forget("hold:" + row["id"])
                 self.j.update(row["id"], DONE, filled=str(filled),
                               result={"filled": str(filled), "state": status.state, "raw": status.raw})
+                self._switch_fill(row, payload, filled, status.state, now)
                 if status.state == "rejected":
                     self._lock("order_rejected_after_acceptance", "Accepted order later rejected; review " + row["id"],
                                now, row["id"], required="Read the rejection reason in the broker app")
@@ -709,14 +749,162 @@ class Engine:
             return "carried over: " + reason
         return None
 
+    # ---- switch intents and same-session recovery ----
+    #
+    # A switch intent exists while the confirmed target differs from the strategy
+    # holdings. It records which holdings belong to the switch and the money their
+    # sale actually produced, so a recovery after the open window can finish the
+    # switch WITHOUT investing new deposits or other idle cash.
+
+    def _budget(self, intent):
+        return max(D(0), money(intent["proceeds"]) + money(intent["carried"]) - money(intent["spent"]))
+
+    def _save_intent(self, intent):
+        intent["events"] = intent["events"][-50:]
+        self.j.put_meta("switch_intent", intent)
+
+    def _archive_intent(self, intent):
+        history = self.j.meta("switch_history", []) + [{k: v for k, v in intent.items() if k != "events"}]
+        self.j.put_meta("switch_history", history[-30:])
+
+    def _track_switch(self, snap, target, signal_date, session, now):
+        intent = self.j.meta("switch_intent")
+        if intent and intent["status"] in ("done", "superseded"):
+            intent = None
+        held = {s: q for s, q in snap.positions.items() if s in STRATEGY_SYMBOLS and s != target and q > 0}
+        carried = D(0)
+        if intent and intent["to"] != target:
+            # The confirmed signal moved again before the switch finished: the old
+            # buy is never executed as such. Unspent switch money carries over.
+            carried = self._budget(intent)
+            intent.update(status="superseded", superseded_at=now.isoformat(), superseded_by=target)
+            self._save_intent(intent)
+            self._archive_intent(intent)
+            self.j.event("switch_superseded", {"id": intent["id"], "to": intent["to"], "new_target": target}, now)
+            intent = None
+        if intent is None:
+            if not held and carried <= 0:
+                return None
+            intent = {"id": str(uuid4()), "to": target, "from": {s: str(q) for s, q in held.items()},
+                      "signal_date": signal_date, "created_session": session, "created_at": now.isoformat(),
+                      "status": "selling" if held else "buying", "proceeds": "0", "carried": str(carried),
+                      "spent": "0", "counted": [], "events": [], "recovery_orders": 0}
+            self._save_intent(intent)
+            self.j.event("switch_started", {"id": intent["id"], "to": target, "from": sorted(held),
+                                            "signal_date": signal_date}, now)
+        elif not held and intent["status"] == "selling":
+            intent["status"] = "buying"
+            self._save_intent(intent)
+        return intent
+
+    def _switch_fill(self, row, payload, filled, state, now):
+        intent = self.j.meta("switch_intent")
+        if not intent or intent["status"] in ("done", "superseded") or row["id"] in intent["counted"]:
+            return
+        price, side, symbol = money(payload["price"]), payload["side"], payload["symbol"]
+        if side == "sell" and symbol in intent["from"]:
+            # Conservative: a sell fills at or above its limit; fee buffer deducted.
+            intent["proceeds"] = str(money(intent["proceeds"]) + filled * price * (1 - self.cfg.fee_buffer))
+        elif side == "buy" and symbol == intent["to"]:
+            # Conservative: a buy fills at or below its limit; fee buffer added.
+            intent["spent"] = str(money(intent["spent"]) + filled * price * (1 + self.cfg.fee_buffer))
+        else:
+            return
+        intent["counted"].append(row["id"])
+        if payload.get("recovery") and state == "filled":
+            intent.pop("last_recovery_at", None)   # a complete fill needs no retry spacing
+        intent["events"].append({"at": now.isoformat(), "action": row["id"], "symbol": symbol, "side": side,
+                                 "qty": payload["qty"], "filled": str(filled), "limit": payload["price"],
+                                 "quoted_at": payload.get("quoted_at"), "state": state,
+                                 "recovery": bool(payload.get("recovery"))})
+        self._save_intent(intent)
+
+    def _complete_switch(self, target, now, how):
+        intent = self.j.meta("switch_intent")
+        if intent and intent["to"] == target and intent["status"] not in ("done", "superseded"):
+            intent.update(status="done", completed_at=now.isoformat(), completed_by=how)
+            self._save_intent(intent)
+            self._archive_intent(intent)
+            self.j.event("switch_done", {"id": intent["id"], "to": target, "how": how}, now)
+
+    def _send_order(self, *, symbol, side, qty, quote, price, snap, target, signal_date, session, now,
+                    deadline, extra=None):
+        if self._past(deadline, now):
+            return "idle: execution window closed during this run"
+        payload = dict(symbol=symbol, side=side, qty=str(qty), price=str(price),
+                       held_before=str(snap.positions.get(symbol, D(0))), target=target,
+                       signal_date=signal_date, quoted_at=quote.at.isoformat(), **(extra or {}))
+        sent_at = self._current(now)
+
+        def order_guard():
+            if self._past(deadline, now):
+                raise Aborted("execution window closed before send")
+            try:
+                check_quote(quote, self._current(now), self.cfg)
+            except Stop as exc:
+                raise Aborted("quote no longer valid at send time: " + str(exc)) from exc
+        return self._submit("order", payload, sent_at, session,
+                            lambda: self.broker.order(symbol, side, qty, price, sent_at), order_guard)
+
+    def _recover(self, snap, target, signal_date, session, now, deadline):
+        """Same-session completion of a confirmed switch after the open window."""
+        intent = self.j.meta("switch_intent")
+        if not intent or intent["status"] in ("done", "superseded") or intent["to"] != target:
+            return None
+        count = sum(r["kind"] == "order" and r["session"] == session for r in self.j.rows())
+        remaining = self.cfg.max_orders_per_session - count
+        if remaining <= 0:
+            raise Stop("Order count limit reached during intraday switch recovery; resumes next session")
+        last = intent.get("last_recovery_at")
+        if last:
+            left = (deadline - self._current(now)).total_seconds() if deadline else 0
+            # Spread the remaining attempts over the remaining time so the session
+            # cap is never the thing that ends the recovery early.
+            interval = max(self.cfg.recovery_retry_seconds, left / remaining if left > 0 else 0)
+            if (now - datetime.fromisoformat(last)).total_seconds() < interval:
+                return "waiting: intraday recovery pacing"
+        wait = self._retry_wait(now)
+        if wait:
+            return wait
+        self._require_no_reservations(now)
+        sells = [s for s in sorted(intent["from"]) if snap.positions.get(s, D(0)) > 0]
+        if self._past(deadline, now):
+            return "idle: recovery window closed during this run"
+        if sells:
+            symbol, side = sells[0], "sell"
+            qty = min(snap.positions[symbol], snap.sellable.get(symbol, D(0)), money(intent["from"][symbol]))
+            if qty <= 0:
+                return "waiting: shares become sellable"
+            if qty != qty.to_integral_value():
+                raise Stop("Fractional holdings require separate handling")
+        else:
+            symbol, side = target, "buy"
+        quote = self.broker.quote(symbol, self._current(now))
+        check_quote(quote, self._current(now), self.cfg)
+        price = limit_price(quote, side, self.cfg)
+        if side == "buy":
+            budget = self._budget(intent)
+            qty = buy_quantity(min(snap.usd, budget), snap.buying_power, price, self.cfg)
+            if qty < 1:
+                if buy_quantity(budget, budget, price, self.cfg) >= 1:
+                    return "waiting: sale proceeds not yet orderable"
+                self._complete_switch(target, now, "intraday recovery")
+                return "idle: switch complete"
+        intent["last_recovery_at"] = now.isoformat()
+        intent["recovery_orders"] = intent.get("recovery_orders", 0) + 1
+        self._save_intent(intent)
+        return self._send_order(symbol=symbol, side=side, qty=qty, quote=quote, price=price, snap=snap,
+                                target=target, signal_date=signal_date, session=session, now=now,
+                                deadline=deadline, extra={"recovery": True, "switch": intent["id"]})
+
     def tick(self, *, target, signal_date, expected_signal_date, session, now,
              may_exchange=False, may_trade=False, may_manage_orders=None, market_block=None, window_over=False,
-             signal_error=None, trade_deadline=None, fx_deadline=None):
+             signal_error=None, trade_deadline=None, fx_deadline=None, may_recover=False, recovery_deadline=None):
         if now.tzinfo is None:
             raise ValueError("timezone-aware now required")
         # A missing or stale signal blocks NEW requests only; requests already sent
         # are still settled below (status reads, fills, own-order cancels).
-        signal_ok = target in {"QQQ", "TQQQ"} and signal_date == expected_signal_date and not signal_error
+        signal_ok = target in STRATEGY_SYMBOLS and signal_date == expected_signal_date and not signal_error
         if not signal_ok:
             target = None
         locked = self.j.meta("halt")
@@ -725,7 +913,7 @@ class Engine:
         # under a lock, reservations or an unconfirmed market. Own-order cancels
         # are allowed only while unlocked and the market permits them.
         may_cancel = (may_trade if may_manage_orders is None else may_manage_orders) and not locked
-        result = self._reconcile(snap, now, target=target, may_cancel=may_cancel)
+        result = self._reconcile(snap, now, target=target, may_cancel=may_cancel, session=session)
         if result:
             return result
         if locked:
@@ -737,6 +925,7 @@ class Engine:
         unsupported = unsupported_holdings(snap.positions, self.cfg)
         if unsupported:
             raise Stop("Existing holdings left untouched: " + ", ".join(unsupported))
+        self._track_switch(snap, target, signal_date, session, now)
         note = self._note_carryover(snap, target, session, now) if window_over and not may_trade else None
         if market_block:
             raise Stop("New orders blocked: " + market_block)
@@ -766,6 +955,10 @@ class Engine:
                                            "rate": str(quote.ask), "quote_time": quote.server_time},
                                     self._current(now), session, lambda: self.broker.exchange(krw, quote), fx_guard)
         if not may_trade:
+            if may_recover and self.cfg.intraday_recovery:
+                recovered = self._recover(snap, target, signal_date, session, now, recovery_deadline)
+                if recovered:
+                    return recovered
             return note or "idle: outside execution window"
         wait = self._retry_wait(now)
         if wait:
@@ -797,25 +990,13 @@ class Engine:
                 self.j.put_meta("position_state", {"target": target, "aligned": aligned, "session": session})
                 if buy_quantity(snap.usd, snap.usd, price, self.cfg) >= 1:
                     # Sale proceeds are in the estimate but not yet orderable: re-read
-                    # on the next run inside the window; carried over after it.
+                    # on the next run; the switch can still finish intraday.
                     return "waiting: sale proceeds not yet orderable"
+                self._complete_switch(target, now, "open window")
                 return "idle: insufficient USD for one share"
-        if self._past(trade_deadline, now):
-            return "idle: execution window closed during this run"
-        payload = dict(symbol=symbol, side=side, qty=str(qty), price=str(price),
-                       held_before=str(snap.positions.get(symbol, D(0))), target=target,
-                       signal_date=signal_date, quoted_at=quote.at.isoformat())
-        sent_at = self._current(now)
-
-        def order_guard():
-            if self._past(trade_deadline, now):
-                raise Aborted("execution window closed before send")
-            try:
-                check_quote(quote, self._current(now), self.cfg)
-            except Stop as exc:
-                raise Aborted("quote no longer valid at send time: " + str(exc)) from exc
-        return self._submit("order", payload, sent_at, session,
-                            lambda: self.broker.order(symbol, side, qty, price, sent_at), order_guard)
+        return self._send_order(symbol=symbol, side=side, qty=qty, quote=quote, price=price, snap=snap,
+                                target=target, signal_date=signal_date, session=session, now=now,
+                                deadline=trade_deadline)
 
 
 def _ref(receipt):

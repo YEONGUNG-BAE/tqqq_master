@@ -21,7 +21,8 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
-from .core import (CLOCK_SKEW_SECONDS, D, FXQuote, NotSent, OrderStatus, Quote, Refused, RefusedUnconfirmed,
+from .core import (CLOCK_SKEW_SECONDS, D, FXQuote, NotSent, OrderStatus, PendingConfirmation, Quote, Refused,
+                   RefusedUnconfirmed,
                    Rejected, ReservationLookup, Snapshot, Stop, UnknownOutcome, money)
 
 KST = ZoneInfo("Asia/Seoul")
@@ -652,7 +653,7 @@ class Meritz:
         if historical and status.state == "open":
             # Detail has no confirmed-cancel quantity. A cancel request or an
             # elapsed day is not evidence of cancellation. Do not infer expiry.
-            raise Stop("Historical order is not explicitly terminal; reconcile cancellation in account")
+            raise PendingConfirmation("Historical order is not explicitly terminal; reconcile cancellation in account")
         return status
 
     def order_history(self, first, last):

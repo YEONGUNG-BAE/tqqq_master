@@ -418,7 +418,11 @@ def recovery_section(journal, now):
         if not record.get("carried_over"):
             break
         streak += 1
-    return {"lock": journal.meta("lock_info"), "hold": journal.meta("active_hold"),
+    intent = journal.meta("switch_intent") or {}
+    switch = ({k: intent.get(k) for k in ("to", "status", "signal_date", "created_session", "created_at",
+                                           "completed_at", "completed_by", "recovery_orders")}
+              if intent else None)
+    return {"lock": journal.meta("lock_info"), "hold": journal.meta("active_hold"), "switch": switch,
             "failures": journal.meta("failures", {"count": 0}), "auth_failures": journal.meta("auth_failures", 0),
             "action_status_counts": counts,
             "live_requests": [{"id": r["id"], "kind": r["kind"], "status": r["status"], "created": r["created"],

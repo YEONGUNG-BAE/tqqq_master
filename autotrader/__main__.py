@@ -188,7 +188,12 @@ def run_locked(cfg, state, settings):
                         "US regular session not confirmed: " + "; ".join(market["reasons"]))
         if market is not None:
             journal.put_meta("market_check", market)
-        window_over = bool(session_row) and now >= session_row[1] + timedelta(minutes=15)
+        recovery = schedule.recovery_window(now, settings.recovery_close_buffer_minutes)
+        # Switch recovery after the open window, before the close buffer. New-deposit
+        # buys keep the open window only (the engine enforces that).
+        may_recover = bool(recovery and may_manage and not regular_window and recovery[0] <= now < recovery[1])
+        # Carry-over is recorded once recovery can no longer place orders today.
+        window_over = bool(session_row) and now >= (recovery[1] if recovery else session_row[1] + timedelta(minutes=15))
         session_key = schedule.session_key(now)
         engine = Engine(broker, journal, settings)
         # Reads can be slow: quote freshness and the window are re-checked against
@@ -200,7 +205,8 @@ def run_locked(cfg, state, settings):
                              now=now, may_exchange=schedule.exchange_window(now), may_trade=may_trade,
                              may_manage_orders=may_manage, market_block=market_block, window_over=window_over,
                              trade_deadline=schedule.execution_deadline(now) if may_trade else None,
-                             fx_deadline=schedule.exchange_deadline(now))
+                             fx_deadline=schedule.exchange_deadline(now),
+                             may_recover=may_recover, recovery_deadline=recovery[1] if may_recover else None)
         journal.put_meta("auth_failures", 0)
         if signal_error:
             # Own requests were settled above; the run still ends as a hold.

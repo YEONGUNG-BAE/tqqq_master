@@ -14,6 +14,10 @@ from datetime import date
 WINDOW = 252
 EXIT_DD = -0.15
 ENTRY_DD = -0.12
+# The only place the two strategy symbols are defined. The defensive symbol is
+# QQQ in this version; replacing it (e.g. by SGOV) is a separate, reviewed change.
+RISK_SYMBOL = "TQQQ"
+DEFENSIVE_SYMBOL = "QQQ"
 
 
 @dataclass(frozen=True)
@@ -31,15 +35,15 @@ class Decision:
     full_window: bool
 
 
-def decisions(closes, initial_target="TQQQ"):
+def decisions(closes, initial_target=RISK_SYMBOL):
     """Replay all available history; persist/replay targets independently of fills.
 
     Early rows have partial windows for historical initialization. A live
     decision requires at least 252 observations (checked by the CLI).
     nonexpiring_high is diagnostic ONLY and never changes the trading rule.
     """
-    if initial_target not in {"QQQ", "TQQQ"}:
-        raise ValueError("initial_target must be QQQ or TQQQ")
+    if initial_target not in {DEFENSIVE_SYMBOL, RISK_SYMBOL}:
+        raise ValueError(f"initial_target must be {DEFENSIVE_SYMBOL} or {RISK_SYMBOL}")
     prices = [Decimal(str(p)) for p in closes]
     if not prices or any(not p.is_finite() or p <= 0 for p in prices):
         raise ValueError("closes must be nonempty, finite, positive")
@@ -52,15 +56,15 @@ def decisions(closes, initial_target="TQQQ"):
         dd = price / high - 1
         previous = target
         expiry = False
-        if previous == "QQQ":
+        if previous == DEFENSIVE_SYMBOL:
             frozen_high = max(frozen_high or high, price)
         diagnostic_high = frozen_high
-        if previous == "TQQQ" and price <= high * Decimal("0.85"):
-            target = "QQQ"
+        if previous == RISK_SYMBOL and price <= high * Decimal("0.85"):
+            target = DEFENSIVE_SYMBOL
             frozen_high = high
             diagnostic_high = high
-        elif previous == "QQQ" and price >= high * Decimal("0.88"):
-            target = "TQQQ"
+        elif previous == DEFENSIVE_SYMBOL and price >= high * Decimal("0.88"):
+            target = RISK_SYMBOL
             expiry = price < frozen_high * Decimal("0.88")
             frozen_high = None
         output.append(Decision(i, float(price), float(high), float(dd), previous, target,
@@ -76,7 +80,7 @@ def main():
     parser.add_argument("csv", help="date,close columns; unique ascending US session dates")
     parser.add_argument("--expected-session", required=True,
                         help="Expected last completed US session YYYY-MM-DD; caller uses exchange calendar")
-    parser.add_argument("--initial-target", choices=["QQQ", "TQQQ"], default="TQQQ")
+    parser.add_argument("--initial-target", choices=[DEFENSIVE_SYMBOL, RISK_SYMBOL], default=RISK_SYMBOL)
     args = parser.parse_args()
     with open(args.csv, newline="", encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))

@@ -19,7 +19,10 @@
     "inconsistency_lock_minutes": 120,
     "max_consecutive_failures": 5,
     "retry_base_seconds": 15,
-    "retry_max_seconds": 120
+    "retry_max_seconds": 120,
+    "intraday_recovery": true,
+    "recovery_close_buffer_minutes": 10,
+    "recovery_retry_seconds": 300
   },
   "verified": {
     "split_only_data": false,

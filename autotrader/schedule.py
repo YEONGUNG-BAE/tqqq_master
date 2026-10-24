@@ -48,6 +48,15 @@ class Schedule:
         session = self.trading_session(now)
         return session[1] + timedelta(minutes=15) if session else None
 
+    def recovery_window(self, now, buffer_minutes):
+        """(start, cutoff) for same-session switch recovery: after the open window,
+        until `buffer_minutes` before the calendar close (early closes included).
+        None outside a regular session."""
+        session = self.trading_session(now)
+        if not session:
+            return None
+        return session[1] + timedelta(minutes=15), session[2] - timedelta(minutes=buffer_minutes)
+
     @staticmethod
     def exchange_deadline(now):
         local = now.astimezone(KST)
