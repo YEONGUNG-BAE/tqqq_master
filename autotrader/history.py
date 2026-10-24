@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from .core import D, Stop, money
-from .signal import decisions
+from .signal import RULE, SIGNAL_SYMBOL, STRATEGY_VERSION, WINDOW, decisions
 
 
 def read_history(path):
@@ -88,6 +88,25 @@ def refresh(broker, path, schedule, expected):
         writer.writerows(sorted(history.items()))
     tmp.replace(path)
     decision = asdict(decisions([price for _, price in sorted(history.items())])[-1])
-    decision.update(signal_date=expected, rule="DD15_12_252_v1", history_rebase=rebase,
-                    execution="NEXT_SESSION_OPEN_WINDOW_SEQUENTIAL_LIMIT")
+    decision.update(signal_date=expected, history_rebase=rebase, **SIGNAL_FIELDS)
+    return decision
+
+
+SIGNAL_FIELDS = dict(rule=RULE, strategy=STRATEGY_VERSION, signal_symbol=SIGNAL_SYMBOL,
+                     execution="NEXT_SESSION_OPEN_WINDOW_SEQUENTIAL_LIMIT")
+
+
+def recompute(path, expected):
+    """Signal for `expected` from the stored QQQ closes only (no network): the
+    whole stored history is replayed from its first close, exactly as refresh
+    does, so the hysteresis state is never re-initialised in the middle. Used
+    when a cached signal belongs to an earlier strategy version. Stops when the
+    stored history does not end on `expected` or is too short."""
+    history = {day: price for day, price in read_history(path).items() if day <= expected}
+    if not history or max(history) != expected:
+        raise Stop("Stored QQQ history does not reach the expected session; refresh from the broker first")
+    if len(history) < WINDOW:
+        raise Stop("Stored QQQ history is shorter than 252 sessions; no target is derived")
+    decision = asdict(decisions([price for _, price in sorted(history.items())])[-1])
+    decision.update(signal_date=expected, history_rebase=False, recomputed_from_stored_history=True, **SIGNAL_FIELDS)
     return decision

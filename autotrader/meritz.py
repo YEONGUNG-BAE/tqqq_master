@@ -24,6 +24,8 @@ from zoneinfo import ZoneInfo
 from .core import (CLOCK_SKEW_SECONDS, D, FXQuote, NotSent, OrderStatus, PendingConfirmation, Quote, Refused,
                    RefusedUnconfirmed,
                    Rejected, ReservationLookup, Snapshot, Stop, UnknownOutcome, money)
+from . import instruments
+from .signal import SIGNAL_SYMBOL
 
 KST = ZoneInfo("Asia/Seoul")
 NY = ZoneInfo("America/New_York")
@@ -228,8 +230,9 @@ class Client:
 
 
 class Meritz:
-    def __init__(self, client: Client, journal):
+    def __init__(self, client: Client, journal, instrument_markets=None):
         self.client, self.j = client, journal
+        self.instrument_markets = dict(instrument_markets or {})
         fingerprint = getattr(client, "key_fingerprint", None)
         if fingerprint:
             bound = journal.meta("broker_key_fingerprint")
@@ -431,6 +434,8 @@ class Meritz:
                              "quantity": str(qty), "sellable": amount(r, "seln_able_dqty"),
                              "balance_kind": kind, "currency": r.get("crcd"),
                              "loan": r.get("loan_dtl_type_code", "0000") != "0000",
+                             # Broker market from the documented "SYMBOL.XX" code (route evidence).
+                             "market": str(r.get("iscd", "")).rsplit(".", 1)[1] if "." in str(r.get("iscd", "")) else None,
                              "average_price": amount(r, "avrg_unpr"), "current_price": amount(r, "psnt_prc"),
                              "value": amount(r, "frcr_vltn_amt")})
         return {"krw": krw, "usd": usd, "debts": debts, "missing_fields": missing, "holdings": holdings}
@@ -520,8 +525,11 @@ class Meritz:
         return ReservationLookup(result, complete=since is not None, searched_from=first.strftime("%Y%m%d"),
                                  searched_to=last.strftime("%Y%m%d"), chunks=chunks, reason=reason)
 
-    def _quote_raw(self, symbol):
-        mrkt = "NY" if symbol == "BRK.B" else "OQ"
+    def route(self, symbol):
+        return instruments.resolve(symbol, self.instrument_markets)
+
+    def _quote_raw(self, symbol, market=None):
+        mrkt = market or self.route(symbol).quote_market
         query = dict(mrkt_div_code="OV", mrkt_cls_code=mrkt, iscd=symbol, dely_rltm_cls_code="0")
         book = self._get("/market/v1/overseas/orderbook", **query)
         px = self._get("/market/v1/overseas/prices", **query)
@@ -533,6 +541,12 @@ class Meritz:
             raise Stop("Quote symbol/currency mismatch")
         if px.get("issu_stat_cls_code", "N") not in {"N", ""} or px.get("vcm_stat_cls_code", "N") not in {"N", ""}:
             raise Stop("Security/market trading restriction")
+        if str(px.get("sell_only", "0")).strip() not in {"0", ""}:
+            raise Stop("Security is sell-only at the broker")
+        # Whole shares only: a documented quantity unit other than 1 is not traded.
+        for unit in ("shnu_oder_qty_unit", "seln_oder_qty_unit"):
+            if str(px.get(unit, "1")).strip() not in {"1", ""}:
+                raise Stop(f"Order quantity unit {px.get(unit)} is not one share")
         stamp = datetime.strptime(book["acpl_hour"], "%H%M%S").time()
         local = now.astimezone(NY)
         at = datetime.combine(local.date(), stamp, NY)
@@ -545,7 +559,12 @@ class Meritz:
     def quote_report(self, symbol, now):
         """(engine Quote or None, display info, reason the engine quote failed)."""
         mrkt, book, px = self._quote_raw(symbol)
-        info = {"last": str(px.get("prpr")), "previous_close": str(px.get("prdy_clpr")),
+        route = self.route(symbol)
+        info = {"route": {"quote_market": route.quote_market, "order_exchange": route.order_exchange,
+                          "source": route.source},
+                "currency": px.get("crnc_code"), "etf": px.get("etf_yn"),
+                "sell_qty_unit": str(px.get("seln_oder_qty_unit", "")),
+                "last": str(px.get("prpr")), "previous_close": str(px.get("prdy_clpr")),
                 "bid": str(book.get("bidp1")), "ask": str(book.get("askp1")),
                 "quote_time_local": book.get("acpl_hour"), "sell_only": str(px.get("sell_only", "")),
                 "security_status": px.get("issu_stat_cls_code"), "leverage": px.get("lvrg"),
@@ -626,8 +645,25 @@ class Meritz:
         # an order number's uniqueness across different trading dates.
         return {"number": int(r["oder_no"]), "date": now.astimezone(KST).strftime("%Y%m%d"), "raw": r}
 
+    def probe_markets(self, symbol):
+        """Read-only (doctor): US quote markets whose price response names this
+        symbol in USD. A wrong market returns an empty record per the spec."""
+        found = {}
+        for market in instruments.US_ROUTES:
+            query = dict(mrkt_div_code="OV", mrkt_cls_code=market, iscd=symbol, dely_rltm_cls_code="0")
+            try:
+                px = self._get("/market/v1/overseas/prices", **query)
+            except Exception as exc:
+                found[market] = {"status": "error", "error": type(exc).__name__}
+                continue
+            ok = bool(px) and px.get("iscd") in {symbol, symbol + "." + market} and px.get("crnc_code") == "USD"
+            found[market] = {"status": "match" if ok else "no_match", "iscd": (px or {}).get("iscd"),
+                             "currency": (px or {}).get("crnc_code")}
+        return found
+
     def order(self, symbol, side, qty, price, now):
-        exchange = "0321" if symbol == "BRK.B" else "0537"
+        route = self.route(symbol)
+        exchange = route.order_exchange
         response = self.client.call("POST", "/trading/v1/overseas/orders/" + side, body=dict(
             ovrs_stck_symb_iscd=symbol, ovrs_exch_vndr_idno=exchange,
             oder_cls_code="01", oder_cond_cls_code="0", odqt=int(qty),
@@ -639,7 +675,8 @@ class Meritz:
                    and money(r["odqt"]) == qty and str(r["oder_rctf_cncl_cls_code"]) == "0"]
         if len(matches) != 1:
             raise UnknownOutcome("New order not uniquely visible in broker ledger")
-        receipt.update(date=matches[0]["oder_date"], symbol=symbol, side=side, qty=str(qty))
+        receipt.update(date=matches[0]["oder_date"], symbol=symbol, side=side, qty=str(qty),
+                       market=route.quote_market, exchange=exchange)
         return receipt
 
     @staticmethod
@@ -712,8 +749,9 @@ class Meritz:
         return receipt
 
     def completed_candles(self, first, last):
-        rows = self._get("/market/v1/overseas/candles/days", mrkt_div_code="OV", mrkt_cls_code="OQ",
-                         iscd="QQQ", dely_rltm_cls_code="0", mod_stpr_cls_code="1",
+        signal = self.route(SIGNAL_SYMBOL)          # the signal's closes: always QQQ
+        rows = self._get("/market/v1/overseas/candles/days", mrkt_div_code="OV", mrkt_cls_code=signal.quote_market,
+                         iscd=SIGNAL_SYMBOL, dely_rltm_cls_code="0", mod_stpr_cls_code="1",
                          **{"from": first.replace("-", ""), "to": last.replace("-", "")})
         result = {}
         for r in rows or []:

@@ -10,6 +10,7 @@ from unittest.mock import patch
 from autotrader import books, tax
 from autotrader.core import NOT_SENT, D, Engine, Journal, ReservationLookup, Stop, UnknownOutcome
 from autotrader.tax_reserve import TaxPlan
+from autotrader.signal import DEFENSIVE_SYMBOL
 from test_tax_reserve import JAN, ReserveBase
 
 RESERVATION = {"symbol": "QQQ", "side": "buy", "quantity": "1"}
@@ -104,18 +105,18 @@ class ExistingDbTests(ReserveBase):
 
     def test_done_switch_order_without_its_switch_booking(self):
         self.broker.positions = {"TQQQ": D(100)}
-        self.assertEqual(self.tick(target="QQQ"), "submitted: order")
+        self.assertEqual(self.tick(target=DEFENSIVE_SYMBOL), "submitted: order")
         self.broker.fill(1)
         with patch.object(Engine, "_order_effects", lambda *a, **k: None):      # older version: DONE only
-            self.tick(at=10, target="QQQ", may_trade=False)
+            self.tick(at=10, target=DEFENSIVE_SYMBOL, may_trade=False)
         sell = [r["id"] for r in self.journal.rows() if r["kind"] == "order"]
         self.assertEqual(self.diagnose()["auto_repair_pending"]["done_without_switch_effects"], sell)
-        self.tick(at=20, target="QQQ", may_trade=False)
+        self.tick(at=20, target=DEFENSIVE_SYMBOL, may_trade=False)
         self.assertEqual(self.diagnose()["auto_repair_pending"]["done_without_switch_effects"], [])
         self.assertIn(sell[0], self.journal.meta("switch_intent")["counted"])
         before = self.audit()
         self.assertEqual(before["effects_replayed"], 1)
-        self.tick(at=30, target="QQQ", may_trade=False)
+        self.tick(at=30, target=DEFENSIVE_SYMBOL, may_trade=False)
         self.assertEqual(self.audit(), before)                                  # idempotent
 
     def test_done_reverse_fx_without_its_tax_booking(self):

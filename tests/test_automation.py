@@ -11,6 +11,7 @@ from autotrader.meritz import Meritz, Client
 from autotrader.paper import Paper
 from autotrader.schedule import Schedule
 from autotrader.signal import decisions
+from autotrader.signal import DEFENSIVE_SYMBOL
 
 NOW = datetime(2026, 10, 15, 13, 31, tzinfo=timezone.utc)
 
@@ -77,7 +78,7 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(len(self.broker.orders), 1)
 
     def test_partial_sale_waits_then_cancel_and_sells_remainder(self):
-        self.broker.positions = {"QQQ": D(10)}
+        self.broker.positions = {DEFENSIVE_SYMBOL: D(10)}
         self.tick()
         n = next(iter(self.broker.orders))
         self.broker.fill(n, 3)
@@ -87,10 +88,10 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(self.tick(now=NOW + timedelta(seconds=122)), "confirmed: cancellation")
         self.assertEqual(self.tick(now=NOW + timedelta(seconds=123)), "confirmed: cancelled")
         self.tick(now=NOW + timedelta(seconds=124))
-        self.assertEqual(self.broker.calls[-1], ("sell", "QQQ", D(7)))
+        self.assertEqual(self.broker.calls[-1], ("sell", DEFENSIVE_SYMBOL, D(7)))
 
     def test_full_sale_confirms_before_buy(self):
-        self.broker.positions = {"QQQ": D(10)}
+        self.broker.positions = {DEFENSIVE_SYMBOL: D(10)}
         self.tick()
         self.broker.fill(next(iter(self.broker.orders)))
         self.assertEqual(self.tick(), "confirmed: filled")
@@ -113,8 +114,8 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(len(self.broker.orders), 1)
 
     def test_new_money_buys_qqq_in_defensive_state(self):
-        self.tick(target="QQQ")
-        self.assertEqual(self.broker.calls[-1][0:2], ("buy", "QQQ"))
+        self.tick(target=DEFENSIVE_SYMBOL)
+        self.assertEqual(self.broker.calls[-1][0:2], ("buy", DEFENSIVE_SYMBOL))
 
     def test_real_buying_power_caps_quantity(self):
         self.broker.power_fraction = D("0.95")
@@ -284,8 +285,8 @@ class CalendarHistoryTests(unittest.TestCase):
     def test_rule_hysteresis_and_expiry_diagnostic(self):
         prices = [100] * 252 + [84] + [85] * 252
         result = decisions(prices)
-        self.assertEqual(result[252].target, "QQQ")
-        self.assertEqual(result[253].target, "QQQ")
+        self.assertEqual(result[252].target, DEFENSIVE_SYMBOL)
+        self.assertEqual(result[253].target, DEFENSIVE_SYMBOL)
         expiry = [r for r in result if r.expiry_driven]
         self.assertEqual(len(expiry), 1)
         self.assertEqual(expiry[0].target, "TQQQ")

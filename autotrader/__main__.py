@@ -9,7 +9,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .core import (D, SUBMITTING, UNKNOWN, Engine, Journal, JournalError, Settings, Stop, set_lock)
-from .history import refresh
+from .history import recompute, refresh
+from .signal import STRATEGY_VERSION
 from .meritz import AuthError, Client, Meritz
 from .notify import Notifier, default_channels, scrub, secret_values
 from . import books, heartbeat, tax, telegram_bot
@@ -187,6 +188,26 @@ def make_plan(journal, cfg, now):
     return settings, plan, blockers
 
 
+def migrate_signal(journal, history_path, old, now):
+    """Replace a cached signal of an earlier strategy version. Same stored QQQ
+    closes, same full replay; the old record is kept in the event and the
+    change is recorded once. Returns the new signal, or None to fall back to a
+    normal broker refresh (e.g. the stored history ends before that session)."""
+    try:
+        new = recompute(history_path, old["signal_date"])
+    except Stop:
+        new = None
+    with journal.atomic():
+        journal.put_meta("signal", new)
+        if journal.meta("strategy_version") != STRATEGY_VERSION:
+            journal.event("strategy_changed", {"from": old.get("strategy") or old.get("rule"),
+                                               "to": STRATEGY_VERSION, "old_target": old.get("target"),
+                                               "new_target": (new or {}).get("target"),
+                                               "signal_date": old.get("signal_date")}, now)
+            journal.put_meta("strategy_version", STRATEGY_VERSION)
+    return new
+
+
 def plan_notices(journal, notifier, plan, now):
     for year in plan.active_years(now):
         year_notices(journal, notifier, plan, year, now)
@@ -292,7 +313,7 @@ def run_locked(cfg, state, settings):
     outcome = "error"
     try:
         client = Client(state, allow_mutations=settings.mode == "live")
-        broker = Meritz(client, journal)
+        broker = Meritz(client, journal, settings.instrument_markets)
         schedule = Schedule(now)
         expected = schedule.expected_close(now)
         history_path = state / "qqq_close.csv"
@@ -300,6 +321,10 @@ def run_locked(cfg, state, settings):
             shutil.copyfile(ROOT / "qqq_seed.csv", history_path)
         signal = journal.meta("signal")
         signal_error = None
+        if signal is not None and signal.get("strategy") != STRATEGY_VERSION:
+            # A cache from an earlier strategy version (defensive QQQ): rebuilt from
+            # the same stored QQQ closes even for the same session, never patched.
+            signal = migrate_signal(journal, history_path, signal, now)
         if signal is None or signal["signal_date"] != expected:
             try:
                 signal = refresh(broker, history_path, schedule, expected)
@@ -424,7 +449,7 @@ def doctor(args):
             report = collect(cfg=cfg, state=state, settings=settings, now=now, schedule=Schedule(now),
                              journal=journal, root=ROOT,
                              client_factory=lambda: Client(state, allow_mutations=False),
-                             broker_factory=lambda client: Meritz(client, journal))
+                             broker_factory=lambda client: Meritz(client, journal, settings.instrument_markets))
         finally:
             journal.db.close()
     secrets = [os.environ.get(k, "") for k in CREDENTIAL_KEYS + ("MERITZ_MAC_ADDRESS", "ALERT_SMTP_PASSWORD",

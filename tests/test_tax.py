@@ -14,6 +14,7 @@ from autotrader.__main__ import tax_notices
 from autotrader.core import D, Engine, Journal, Settings
 from autotrader.notify import Notifier
 from autotrader.schedule import Schedule
+from autotrader.signal import DEFENSIVE_SYMBOL
 from test_fault_injection import FaultBroker
 
 NOW = datetime(2026, 10, 20, 3, 0, tzinfo=timezone.utc)
@@ -99,7 +100,7 @@ class FifoTests(LedgerBase):
         tax.record_fill(self.db, fill("1", "TQQQ", "buy", 1, 1, 1, "2026-03-02T23:00:00+09:00", None, "1.0"), NOW)
         broker = FaultBroker(usd="0", positions={"TQQQ": 10})
         engine = Engine(broker, self.journal, Settings(mode="paper"))
-        result = engine.tick(target="QQQ", signal_date="2026-10-19", expected_signal_date="2026-10-19",
+        result = engine.tick(target=DEFENSIVE_SYMBOL, signal_date="2026-10-19", expected_signal_date="2026-10-19",
                              session="2026-10-20", now=datetime(2026, 10, 20, 13, 31, tzinfo=timezone.utc),
                              may_trade=True)
         self.assertEqual(result, "submitted: order")

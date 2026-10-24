@@ -18,6 +18,7 @@ from unittest.mock import patch
 from autotrader import telegram_bot
 from autotrader.core import D, DONE, Engine, Journal, Settings, UnknownOutcome
 from autotrader.tax_reserve import TaxPlan
+from autotrader.signal import DEFENSIVE_SYMBOL
 from test_fault_injection import FaultBroker
 
 JAN = datetime(2027, 1, 20, 14, 31, tzinfo=timezone.utc)          # round 1 of 5 elapsed (KST Jan 20/21)
@@ -191,31 +192,31 @@ class TaxSellGuardTests(ReserveBase):
         self.tick()
         self.assertEqual(self.broker.calls, [])
         # The same ledger problems never stop a strategy switch.
-        self.assertEqual(self.tick(at=10, target="QQQ"), "submitted: order")
+        self.assertEqual(self.tick(at=10, target=DEFENSIVE_SYMBOL), "submitted: order")
         self.assertEqual(self.broker.calls[-1][:2], ("sell", "TQQQ"))
 
     def test_switch_proceeds_are_earmarked_instead_of_a_separate_tax_sell(self):
         self.cap(TAX)
         self.broker.krw = D(0)
-        self.tick(target="QQQ")                                    # risk-reduction switch: sell first
+        self.tick(target=DEFENSIVE_SYMBOL)                                    # risk-reduction switch: sell first
         self.broker.fill(1)
-        self.tick(at=10, target="QQQ")
+        self.tick(at=10, target=DEFENSIVE_SYMBOL)
         st = self.st()
         self.assertGreater(st["reserve_usd"], 0)                   # gap taken from the sale proceeds
-        self.tick(at=20, target="QQQ")
+        self.tick(at=20, target=DEFENSIVE_SYMBOL)
         sells = [c for c in self.broker.calls if c[0] == "sell"]
         self.assertEqual(len(sells), 1)                            # no extra tax sell
         buy = self.broker.orders[max(self.broker.orders)]
-        self.assertEqual(buy["symbol"], "QQQ")
+        self.assertEqual(buy["symbol"], DEFENSIVE_SYMBOL)
         proceeds = D(100) * D("69.93") * (1 - D("0.0015"))         # conservative sale proceeds
         self.assertLessEqual(buy["qty"] * buy["price"] * (1 + D("0.0015")), proceeds - st["reserve_usd"])
 
     def test_no_tax_sell_while_a_switch_is_still_open(self):
         self.cap(D(100_000_000))
         self.estimate = D(10_000_000)                              # gap far above the switch proceeds
-        self.broker.positions = {"TQQQ": D(50), "QQQ": D(1)}       # return switch: QQQ -> TQQQ
+        self.broker.positions = {"TQQQ": D(50), DEFENSIVE_SYMBOL: D(1)}       # return switch: QQQ -> TQQQ
         self.assertEqual(self.tick(), "submitted: order")
-        self.assertEqual(self.broker.calls[-1][:2], ("sell", "QQQ"))
+        self.assertEqual(self.broker.calls[-1][:2], ("sell", DEFENSIVE_SYMBOL))
         self.broker.fill(1)
         self.tick(at=10)                                           # sale confirmed, proceeds earmarked
         result = self.tick(at=20)                                  # switch still open in this run

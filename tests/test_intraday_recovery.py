@@ -259,9 +259,11 @@ class CliRecoveryTests(Harness):
         from test_doctor import FakeMeritz, SECRET_ENV
         root = self.state / "cli"
         root.mkdir()
+        from test_doctor import TEST_SGOV_MARKET
         (root / "config.json").write_text(json.dumps({"state_dir": "state_observe", "notifications": False,
                                                        "account_lock_dir": str(self.state / "locks"),
-                                                       "execution": {"mode": "observe"}}))
+                                                       "execution": {"mode": "observe", "instrument_markets":
+                                                                     {DEFENSIVE_SYMBOL: TEST_SGOV_MARKET}}}))
         (root / "secrets.env").write_text("".join(f"{k}={v}\n" for k, v in SECRET_ENV.items()))
         os.chmod(root / "secrets.env", 0o600)
         now = datetime(2026, 10, 15, 15, 0, tzinfo=timezone.utc)                # mid-session, after the window

@@ -26,6 +26,7 @@ from autotrader.core import (ACCEPTED, CANCELLING, DONE, NOT_SENT, PARTIAL, PREP
 from autotrader.meritz import AuthError, Client, KST, Meritz
 from autotrader.notify import Notifier, scrub, telegram_channel
 from autotrader.paper import Paper
+from autotrader.signal import DEFENSIVE_SYMBOL
 from test_doctor import APIS, KRW_MORNING, SECRET_ENV, TOKEN, US_OPEN, FakeMeritz, Harness
 
 NOW = datetime(2026, 10, 15, 13, 31, tzinfo=timezone.utc)
@@ -318,7 +319,7 @@ class AdapterCandidateTests(unittest.TestCase):
 # 3 --------------------------------------------------------------------------
 class PartialFillCancelTests(Base):
     def test_fill_just_before_cancel_confirmation_counts_only_final_fills(self):
-        self.broker.positions = {"QQQ": D(10)}
+        self.broker.positions = {DEFENSIVE_SYMBOL: D(10)}
         self.broker.deferred_cancel = True
         self.assertEqual(self.tick(), "submitted: order")                       # sell 10
         self.broker.fill(1, 3)
@@ -333,9 +334,9 @@ class PartialFillCancelTests(Base):
         self.assertEqual(self.tick(at=135), "confirmed: cancelled")
         order = next(r for r in self.journal.rows() if r["kind"] == "order")
         self.assertEqual((order["status"], order["filled"]), (DONE, "5"))
-        self.assertEqual(self.broker.positions, {"QQQ": D(5)})
+        self.assertEqual(self.broker.positions, {DEFENSIVE_SYMBOL: D(5)})
         self.tick(at=140)
-        self.assertEqual(self.sent("sell"), [("sell", "QQQ", D(10)), ("sell", "QQQ", D(5))])
+        self.assertEqual(self.sent("sell"), [("sell", DEFENSIVE_SYMBOL, D(10)), ("sell", DEFENSIVE_SYMBOL, D(5))])
         self.assertEqual(len(self.sent("cancel")), 1)
 
 
@@ -365,7 +366,7 @@ class ProceedsAndCarryoverTests(Base):
         self.broker.usd = D(0)
 
     def test_proceeds_lag_carries_over_then_next_window_buys_once(self):
-        self.broker.positions = {"QQQ": D(10)}
+        self.broker.positions = {DEFENSIVE_SYMBOL: D(10)}
         self.tick()
         self.broker.fill(1)
         self.assertEqual(self.tick(at=10), "confirmed: filled")
@@ -380,11 +381,11 @@ class ProceedsAndCarryoverTests(Base):
         self.broker.power = None
         self.restart()
         self.assertEqual(self.tick(at=86400, session="2026-10-16"), "submitted: order")
-        self.assertEqual([c[:2] for c in self.broker.calls], [("sell", "QQQ"), ("buy", "TQQQ")])
+        self.assertEqual([c[:2] for c in self.broker.calls], [("sell", DEFENSIVE_SYMBOL), ("buy", "TQQQ")])
 
     def test_target_change_during_carryover_avoids_round_trip(self):
         self.broker.positions = {"TQQQ": D(10)}
-        qqq = dict(SIGNAL, target="QQQ")
+        qqq = dict(SIGNAL, target=DEFENSIVE_SYMBOL)
         self.engine.tick(**qqq, now=NOW, may_trade=True)                         # sell 10 TQQQ
         self.broker.fill(1, 4)
         self.assertEqual(self.engine.tick(**qqq, now=NOW + timedelta(seconds=121), may_trade=True), "submitted: cancel")
@@ -400,7 +401,7 @@ class ProceedsAndCarryoverTests(Base):
     def test_open_bot_order_for_old_target_is_cancelled_before_timeout(self):
         self.broker.usd = D(1000)
         self.tick()                                                              # buy TQQQ, unfilled
-        qqq = dict(SIGNAL, target="QQQ")
+        qqq = dict(SIGNAL, target=DEFENSIVE_SYMBOL)
         self.assertEqual(self.engine.tick(**qqq, now=NOW + timedelta(seconds=20), may_trade=True), "submitted: cancel")
         cancel = next(r for r in self.journal.rows() if r["kind"] == "cancel")
         self.assertEqual(json.loads(cancel["payload"])["reason"], "target changed")
@@ -410,7 +411,7 @@ class ProceedsAndCarryoverTests(Base):
 class ConcurrencyTests(Base):
     def test_deposit_during_switch_never_double_spends(self):
         self.broker.usd = D(0)
-        self.broker.positions = {"QQQ": D(1)}
+        self.broker.positions = {DEFENSIVE_SYMBOL: D(1)}
         self.tick()                                                              # sell 1 QQQ (700)
         self.broker.krw = D(1400000)                                             # deposit lands meanwhile
         self.assertEqual(self.tick(at=5, may_exchange=True), "waiting: order fill")

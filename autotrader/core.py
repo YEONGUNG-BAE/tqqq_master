@@ -114,9 +114,13 @@ def limit_price(quote, side, cfg):
     return (price / quote.tick).quantize(D(1), rounding=ROUND_UP if side == "buy" else ROUND_DOWN) * quote.tick
 
 
-from .signal import DEFENSIVE_SYMBOL, RISK_SYMBOL  # noqa: E402  (single definition)
+from .signal import (DEFENSIVE_SYMBOL, RISK_SYMBOL, STRATEGY_VERSION,  # noqa: E402  (single definition)
+                     logical_target)
 
 STRATEGY_SYMBOLS = frozenset({RISK_SYMBOL, DEFENSIVE_SYMBOL})
+# Holdings that may be sold only when the user lists them in migrate_symbols.
+# QQQ is the defensive holding of strategy version 1 (now only the signal).
+MIGRATABLE = frozenset({"QQQM", "BRK.B", "QQQ"})
 
 
 def unsupported_holdings(positions, cfg):
@@ -198,6 +202,9 @@ class Settings:
     order_timeout_seconds: int = 120
     max_orders_per_session: int = 20
     migrate_symbols: tuple[str, ...] = ()
+    # Meritz quote market per instrument without a reviewed static route, as
+    # confirmed by the user with doctor (e.g. {"SGOV": "AX"}); see instruments.py.
+    instrument_markets: dict = field(default_factory=dict)
     # YYYYMMDD on/before the account opening date, from the broker app. Without
     # it reservation coverage is unverified and live new actions are blocked.
     reservation_lookup_start: str | None = None
@@ -232,8 +239,10 @@ class Settings:
                 or self.max_consecutive_failures < 1 or self.retry_base_seconds < 1
                 or self.retry_max_seconds < self.retry_base_seconds):
             raise ValueError("recovery limits must be positive and conservative")
-        if not set(self.migrate_symbols).issubset({"QQQM", "BRK.B"}):
-            raise ValueError("migration allowlist supports QQQM and BRK.B only")
+        if not set(self.migrate_symbols).issubset(MIGRATABLE):
+            raise ValueError("migration allowlist supports " + ", ".join(sorted(MIGRATABLE)) + " only")
+        from .instruments import validate_overrides
+        self.instrument_markets = validate_overrides(self.instrument_markets)
         if self.reservation_lookup_start is not None:
             text = str(self.reservation_lookup_start)
             try:
@@ -840,7 +849,12 @@ class Engine:
             if row["status"] == CANCELLING or any(r["kind"] == "cancel" for r in pending):
                 return "waiting: cancellation"
             elapsed = (now - datetime.fromisoformat(row["created"])).total_seconds()
-            conflicting = target is not None and payload.get("target") not in (None, target)
+            # Compare logical targets (an older version's "QQQ" target is the
+            # defensive side); a buy of a different security always conflicts.
+            recorded_target = payload.get("target")
+            conflicting = target is not None and recorded_target is not None and (
+                logical_target(recorded_target, payload.get("strategy")) != target
+                or (payload.get("side") == "buy" and payload.get("symbol") != target))
             if conflicting or elapsed >= self.cfg.order_timeout_seconds:
                 if not may_cancel:
                     return "waiting: market permits cancellation"
@@ -1006,7 +1020,7 @@ class Engine:
         if self._past(deadline, now):
             return "idle: execution window closed during this run"
         payload = dict(symbol=symbol, side=side, qty=str(qty), price=str(price),
-                       held_before=str(snap.positions.get(symbol, D(0))), target=target,
+                       held_before=str(snap.positions.get(symbol, D(0))), target=target, strategy=STRATEGY_VERSION,
                        signal_date=signal_date, quoted_at=quote.at.isoformat(), **(extra or {}))
         sent_at = self._current(now)
 

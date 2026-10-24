@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 from .core import D, Engine, Journal, Settings, Stop, money
 from .paper import Paper
-from .signal import decisions
+from .signal import RULE, SIGNAL_SYMBOL, STRATEGY_VERSION, decisions
 
 
 class PersistentPaper(Paper):
@@ -35,7 +35,8 @@ class PersistentPaper(Paper):
             self.orders = {int(n): dict(row, qty=money(row["qty"]), price=money(row["price"]),
                                       filled=money(row["filled"])) for n,row in saved["orders"].items()}
             self.calls = saved["calls"]
-            self.prices = {s: money(v) for s,v in saved["prices"].items()}
+            # States saved before SGOV keep their prices; new symbols get the defaults.
+            self.prices.update({s: money(v) for s, v in saved["prices"].items()})
             self.fee = money(saved["fee"])
             self.power_fraction = money(saved["power_fraction"])
             self.fx_history = saved.get("fx_history", [])     # absent in older saved states
@@ -170,7 +171,8 @@ def _replay_locked(scenario, fingerprint, path, max_sessions):
             broker.market(event.get("prices", {}))
             broker.deposit(f"session:{index}", event.get("deposit_krw", "0"))
             signal = asdict(decisions(closes)[-1])
-            signal.update(signal_date=previous_session, execution="SYNTHETIC_OFFLINE_WORKFLOW")
+            signal.update(signal_date=previous_session, rule=RULE, strategy=STRATEGY_VERSION,
+                          signal_symbol=SIGNAL_SYMBOL, execution="SYNTHETIC_OFFLINE_WORKFLOW")
             journal.put_meta("signal", signal)
             journal.event("signal", signal, opened)
             common = dict(target=signal["target"], signal_date=previous_session,

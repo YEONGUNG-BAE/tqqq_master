@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from autotrader.core import D, Engine, Journal, Settings, Stop, UnknownOutcome
 from autotrader.replay import PersistentPaper, replay
+from autotrader.signal import DEFENSIVE_SYMBOL
 from test_automation import NOW
 
 
@@ -42,7 +43,7 @@ class ReplayTests(unittest.TestCase):
         self.assertTrue(resumed["complete"])
         self.assertEqual(len(whole["actions"]), len(resumed["actions"]))
         self.assertEqual(set(resumed["final"]["positions"]), {"TQQQ"})
-        self.assertTrue(any(json.loads(a["payload"]).get("symbol")=="QQQ" for a in resumed["actions"]))
+        self.assertTrue(any(json.loads(a["payload"]).get("symbol")==DEFENSIVE_SYMBOL for a in resumed["actions"]))
 
     def test_repeated_finished_run_neither_deposits_nor_orders_again(self):
         a = replay(self.input, self.root/"state")
@@ -62,7 +63,7 @@ class ReplayTests(unittest.TestCase):
         self.assertEqual(r["signal"]["target"], "TQQQ")
         self.assertEqual(r["signal"]["signal_date"], "2026-10-14")
         r = replay(self.input, self.root/"state", max_sessions=1)
-        self.assertEqual(r["signal"]["target"], "QQQ")
+        self.assertEqual(r["signal"]["target"], DEFENSIVE_SYMBOL)
 
     def test_persistent_deposit_idempotency(self):
         j = Journal(self.root/"j.sqlite")

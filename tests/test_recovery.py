@@ -10,13 +10,14 @@ from autotrader.history import refresh
 from autotrader.meritz import Client, Meritz
 from autotrader.paper import Paper
 from autotrader.signal import decisions
+from autotrader.signal import DEFENSIVE_SYMBOL
 from test_automation import NOW
 
 
 class SignalBoundaryTests(unittest.TestCase):
     def test_exact_decimal_thresholds(self):
         rows = decisions(["11.13"]*252+["9.4605", "9.794399999999999", "9.7944"])
-        self.assertEqual([r.target for r in rows[-3:]], ["QQQ", "QQQ", "TQQQ"])
+        self.assertEqual([r.target for r in rows[-3:]], [DEFENSIVE_SYMBOL, DEFENSIVE_SYMBOL, "TQQQ"])
 
     def test_just_above_exit_does_not_exit(self):
         self.assertEqual(decisions(["11.13"]*252+["9.460500000000001"])[-1].target, "TQQQ")

@@ -13,6 +13,7 @@ from autotrader import tax, telegram_bot
 from autotrader.core import D, Engine, Journal, Settings
 from autotrader.schedule import Schedule
 from autotrader.tax_reserve import TaxPlan
+from autotrader.signal import DEFENSIVE_SYMBOL
 from test_fault_injection import FaultBroker
 from test_tax import fill
 
@@ -81,7 +82,7 @@ class LedgerCompletenessTests(Base):
         self.buy_ten()
         broker = FaultBroker(usd="0", positions={"TQQQ": 10})
         engine = Engine(broker, self.journal, Settings(mode="paper"))
-        result = engine.tick(target="QQQ", signal_date="2026-10-23", expected_signal_date="2026-10-23",
+        result = engine.tick(target=DEFENSIVE_SYMBOL, signal_date="2026-10-23", expected_signal_date="2026-10-23",
                              session="2026-10-26", now=datetime(2026, 10, 26, 13, 31, tzinfo=timezone.utc),
                              may_trade=True)
         self.assertEqual(result, "submitted: order")

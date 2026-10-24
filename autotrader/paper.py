@@ -10,7 +10,8 @@ class Paper:
         self.orders = {}
         self.calls = []
         self.fee = D("0.0007")
-        self.prices = {"QQQ": D("700"), "TQQQ": D("70"), "QQQM": D("400"), "BRK.B": D("500")}
+        # Fixed fake prices for tests and demos only; never a return or NAV reference.
+        self.prices = {"QQQ": D("700"), "TQQQ": D("70"), "SGOV": D("100.50"), "QQQM": D("400"), "BRK.B": D("500")}
         self.power_fraction = D(1)
         self.reservations = []  # tests inject live reservations or an exception
         self.fx_history = []    # broker-side FX records, independent of receipts

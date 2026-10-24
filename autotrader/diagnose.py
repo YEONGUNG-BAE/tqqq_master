@@ -18,11 +18,13 @@ from datetime import timedelta
 from decimal import ROUND_DOWN
 from pathlib import Path
 
-from .core import (D, Quote, Stop, buy_quantity, check_fx_quote, check_quote, fx_amount, fx_spent,
-                   limit_price, money, symbols_to_sell, unsupported_holdings)
+from .core import (STRATEGY_SYMBOLS, D, Quote, Stop, buy_quantity, check_fx_quote, check_quote, fx_amount,
+                   fx_spent, limit_price, money, symbols_to_sell, unsupported_holdings)
+from .instruments import KNOWN as KNOWN_ROUTES
 from .history import read_history, refresh
 from .schedule import KST, NY, confirm_regular_session, regular_session_check
-from .signal import decisions
+from .signal import (DEFENSIVE_SYMBOL, LEGACY_DEFENSIVE, RISK_SYMBOL, RULE, SIGNAL_SYMBOL, STRATEGY_VERSION,
+                     decisions)
 
 SCHEMA = "doctor-report/v1"
 CREDENTIAL_KEYS = ("MERITZ_CLIENT_ID", "MERITZ_CLIENT_SECRET")
@@ -86,21 +88,25 @@ def _high_details(history, schedule, last):
 
 
 def explain(decision):
+    """Reason in TQQQ<->SGOV terms; the drawdown is always QQQ's."""
     target, transition = decision["target"], decision["transition"]
-    if transition == "TQQQ->QQQ":
-        return "하락률이 −15% 이하: TQQQ→QQQ 전환"
-    if transition == "QQQ->TQQQ":
+    risk, defensive = RISK_SYMBOL, DEFENSIVE_SYMBOL
+    if transition == f"{risk}->{defensive}":
+        return f"{SIGNAL_SYMBOL} 하락률이 −15% 이하: {risk}→{defensive} 전환"
+    if transition == f"{defensive}->{risk}":
         if decision["expiry_driven"]:
-            return "하락률이 −12% 이상으로 회복: QQQ→TQQQ 복귀 (252일 고점 만료가 원인)"
-        return "하락률이 −12% 이상으로 회복: QQQ→TQQQ 복귀"
-    if target == "TQQQ":
-        return "TQQQ 유지: 하락률이 −15%보다 높음"
-    return "QQQ 유지: 하락률이 −12% 미만 (전환 임계값 사이 또는 아래)"
+            return f"{SIGNAL_SYMBOL} 하락률이 −12% 이상으로 회복: {defensive}→{risk} 복귀 (252일 고점 만료가 원인)"
+        return f"{SIGNAL_SYMBOL} 하락률이 −12% 이상으로 회복: {defensive}→{risk} 복귀"
+    if target == risk:
+        return f"{risk} 유지: {SIGNAL_SYMBOL} 하락률이 −15%보다 높음"
+    return f"{defensive} 유지: {SIGNAL_SYMBOL} 하락률이 −12% 미만 (전환 임계값 사이 또는 아래)"
 
 
 def signal_section(broker, history_path, schedule, expected, verified):
-    report = {"rule": "DD15_12_252_v1", "expected_session": expected,
-              "price_basis": {"declared": "QQQ 분할 조정·배당 미조정 종가 (seed 기준)",
+    report = {"rule": RULE, "strategy": STRATEGY_VERSION, "expected_session": expected,
+              "signal_symbol": SIGNAL_SYMBOL, "risk_symbol": RISK_SYMBOL, "defensive_symbol": DEFENSIVE_SYMBOL,
+              "price_basis": {"declared": f"{SIGNAL_SYMBOL} 분할 조정·배당 미조정 종가 (seed 기준); "
+                                          f"고점·하락률도 {SIGNAL_SYMBOL} 기준, {DEFENSIVE_SYMBOL} 가격은 쓰지 않음",
                               "broker_option": "일봉 mod_stpr_cls_code=1; 명세상 0/1 응답이 같아 API로 기준 구분 불가",
                               "overlap_check": "not_run",
                               "config_verified_split_only": verified.get("split_only_data") is True},
@@ -135,8 +141,10 @@ def signal_section(broker, history_path, schedule, expected, verified):
         usable_for_plan=usable, last_close_date=last, last_close=str(history[last]),
         fresh=last == expected, **high,
         drawdown=f"{signal['drawdown']:.6f}",
-        switch_to_qqq_at_or_below=str((money(high["high_252"]) * D("0.85")).quantize(D("0.0001"))),
-        return_to_tqqq_at_or_above=str((money(high["high_252"]) * D("0.88")).quantize(D("0.0001"))),
+        # QQQ close levels. Renamed from switch_to_qqq_at_or_below / return_to_tqqq_at_or_above
+        # (the defensive holding is no longer QQQ; the level is still a QQQ close).
+        exit_to_defensive_at_or_below_qqq_close=str((money(high["high_252"]) * D("0.85")).quantize(D("0.0001"))),
+        return_to_risk_at_or_above_qqq_close=str((money(high["high_252"]) * D("0.88")).quantize(D("0.0001"))),
         previous_target=signal["previous_target"], target=signal["target"],
         transition=signal["transition"], reason=explain(signal),
         expiry_driven=signal["expiry_driven"], near_threshold=signal["near_threshold"],
@@ -368,7 +376,7 @@ def collect(*, cfg, state, settings, now, schedule, journal, client_factory, bro
             fx_error = _error(exc)
             report["fx"] = {"status": "error", "error": fx_error}
         # Non-strategy holdings are never traded, so they need no order-grade quote.
-        symbols = {"QQQ", "TQQQ"} | (set(snap.positions) & set(settings.migrate_symbols) if snap else set())
+        symbols = set(STRATEGY_SYMBOLS) | (set(snap.positions) & set(settings.migrate_symbols) if snap else set())
         qreport = {}
         for symbol in sorted(symbols):
             try:
@@ -377,6 +385,7 @@ def collect(*, cfg, state, settings, now, schedule, journal, client_factory, bro
             except Exception as exc:
                 qreport[symbol] = {"status": "error", "error": _error(exc)}
         report["quotes"] = dict(qreport, status="ok")
+        report["routes"] = route_section(broker, (report.get("account") or {}).get("holdings") or [])
 
     report["fees"] = fee_section(report, settings)
     report["holdings_state"] = holdings_state(report, signal)
@@ -433,15 +442,55 @@ def recovery_section(journal, now):
                           "note": "이월은 실행상의 예외 처리이며 기존 연구의 체결 가정(다음 거래일 종가)과 다름"}}
 
 
+def route_section(broker, holdings):
+    """Meritz market per strategy instrument. For an instrument without a
+    reviewed static route (SGOV) the three US quote markets are probed
+    read-only; holdings rows ("SGOV.XX") are shown as a second evidence. A
+    probe is evidence for the user, never an automatic route."""
+    out = {}
+    held_codes = {h["symbol"]: h.get("market") for h in holdings}
+    for symbol in sorted(STRATEGY_SYMBOLS):
+        entry = {"configured": None, "source": None, "probe": None, "holding_market": held_codes.get(symbol)}
+        try:
+            route = broker.route(symbol)
+            entry.update(configured={"quote_market": route.quote_market, "order_exchange": route.order_exchange},
+                         source=route.source)
+        except Stop as exc:
+            entry["unverified"] = str(exc)
+        if symbol not in KNOWN_ROUTES and hasattr(broker, "probe_markets"):
+            try:
+                entry["probe"] = broker.probe_markets(symbol)
+            except Exception as exc:
+                entry["probe"] = {"status": "error", "error": _error(exc)}
+            matches = [m for m, r in (entry["probe"] or {}).items() if isinstance(r, dict) and r.get("status") == "match"]
+            entry["probe_matches"] = matches
+            if entry["configured"] and matches and entry["configured"]["quote_market"] not in matches:
+                entry["conflict"] = "configured market does not answer the price probe"
+        entry["order_route_real_account"] = "unverified until a minimum real order is placed and confirmed"
+        out[symbol] = entry
+    return out
+
+
 def holdings_state(report, signal):
+    """Signal target (logical) vs what is actually held. A QQQ holding is the
+    previous strategy's defensive asset, never shown as SGOV."""
     holdings = (report.get("account") or {}).get("holdings")
     if holdings is None:
         return {"status": "not_available"}
-    strategy = sorted({h["symbol"] for h in holdings if h["symbol"] in {"QQQ", "TQQQ"}})
+    strategy = sorted({h["symbol"] for h in holdings if h["symbol"] in STRATEGY_SYMBOLS})
     actual = strategy[0] if len(strategy) == 1 else ("mixed" if strategy else "none")
-    return {"status": "ok", "signal_target": signal["target"] if signal else None, "actual_strategy_holding": actual,
-            "aligned": bool(signal) and actual == signal["target"],
-            "non_strategy": sorted(h["symbol"] for h in holdings if h["symbol"] not in {"QQQ", "TQQQ"})}
+    non_strategy = sorted(h["symbol"] for h in holdings if h["symbol"] not in STRATEGY_SYMBOLS)
+    legacy = [s for s in non_strategy if s in LEGACY_DEFENSIVE]
+    state = {"status": "ok", "signal_symbol": SIGNAL_SYMBOL, "signal_target": signal["target"] if signal else None,
+             "actual_strategy_holding": actual, "aligned": bool(signal) and actual == signal["target"],
+             "non_strategy": non_strategy}
+    if legacy:
+        state["legacy_defensive_holding"] = {
+            "symbols": legacy,
+            "plan": (f"이전 방어 자산 {', '.join(legacy)} 보유: SGOV로 보지 않음. execution.migrate_symbols에 넣으면 "
+                     f"다음 개장 실행창에 매도 후 목표({signal['target'] if signal else '신호 확인 후'}) 매수, 넣지 않으면 "
+                     "엔진은 신규 주문을 보류함(사용자 결정 필요)")}
+    return state
 
 
 def collect_blockers(report, journal, snap, problems, settings, signal):
@@ -473,6 +522,13 @@ def collect_blockers(report, journal, snap, problems, settings, signal):
         unsupported = unsupported_holdings(snap.positions, settings)
         if unsupported:
             add("non_strategy_holdings", "Existing holdings left untouched: " + ", ".join(unsupported))
+    for symbol, route in (report.get("routes") or {}).items():
+        if route.get("unverified"):
+            add("route_unverified", f"{symbol} 메리츠 시장 미확인: 신규 {symbol} 시세·주문 차단 — 시장 조회 결과 "
+                f"{route.get('probe_matches')} 확인 후 execution.instrument_markets.{symbol} 입력")
+        elif route.get("conflict"):
+            add("route_conflict", f"{symbol} 설정 시장 {route['configured']['quote_market']}이 시세 조회에 응답하지 않음: "
+                "설정을 다시 확인")
     reserved = report.get("reserved_orders") or {}
     if reserved.get("live"):
         add("reserved_orders", f"활성 예약주문 {len(reserved['live'])}건: 엔진이 신규 환전·주문을 차단함(예약주문은 취소하지 않음)")
@@ -541,13 +597,23 @@ def render(report):
     sig = report["signal"]
     lines.append(f"5) 종가: 예상 완료 거래일 {sig['expected_session']}, 보유 이력 최종 {sig['last_close_date']} {_short(sig['last_close'])}"
                  f" — 출처 {sig['source']}, 기준 대조 {sig['price_basis']['overlap_check']}")
-    lines.append(f"6) 신호: 252일 고점 {_short(sig['high_252'])}({sig['high_date']}, 만료 {sig['high_leaves_window_on']})"
-                 f" 하락률 {sig['drawdown']} → 목표 {sig['target']} [{sig['status']}]")
-    lines.append(f"   사유: {sig['reason']} | QQQ 전환 ≤ {sig['switch_to_qqq_at_or_below']}, TQQQ 복귀 ≥ {sig['return_to_tqqq_at_or_above']}")
+    lines.append(f"6) 신호({sig['signal_symbol']} 기준): 252일 고점 {_short(sig['high_252'])}({sig['high_date']}, "
+                 f"만료 {sig['high_leaves_window_on']}) 하락률 {sig['drawdown']} → 목표 {sig['target']} [{sig['status']}]")
+    lines.append(f"   사유: {sig['reason']} | {sig['defensive_symbol']} 전환: {sig['signal_symbol']} 종가 ≤ "
+                 f"{sig['exit_to_defensive_at_or_below_qqq_close']}, {sig['risk_symbol']} 복귀: {sig['signal_symbol']} 종가 ≥ "
+                 f"{sig['return_to_risk_at_or_above_qqq_close']}")
     hs = report["holdings_state"]
     if hs.get("status") == "ok":
         lines.append(f"   실제 보유 상태: {hs['actual_strategy_holding']} (신호와 일치: {hs['aligned']})"
                      + (f", 비전략 보유: {', '.join(hs['non_strategy'])}" if hs["non_strategy"] else ""))
+        if hs.get("legacy_defensive_holding"):
+            lines.append("   이관 계획: " + hs["legacy_defensive_holding"]["plan"])
+    for symbol, route in (report.get("routes") or {}).items():
+        conf = route.get("configured")
+        lines.append(f"   {symbol} 경로: " + (f"시세 {conf['quote_market']} / 주문 {conf['order_exchange']}" if conf else "미확인")
+                     + (f", 시장 조회 응답 {route['probe_matches']}" if route.get("probe") is not None else "")
+                     + (f", 보유 행 시장 {route['holding_market']}" if route.get("holding_market") else "")
+                     + " — 실계좌 주문 경로 미검증")
     mk = report["market"]
     bm = mk.get("broker_market", {})
     lines.append(f"7) 시장: 거래소 달력 정규장 {'열림' if mk['calendar']['us_regular_session_open'] else '닫힘'}"

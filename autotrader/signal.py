@@ -1,5 +1,9 @@
 """Frozen DD15/12 signal. Prices: split-adjusted QQQ CLOSE, dividends excluded.
 
+The signal is always computed on QQQ (SIGNAL_SYMBOL); the strategy holds TQQQ
+(RISK_SYMBOL) or SGOV (DEFENSIVE_SYMBOL). SGOV prices and distributions never
+enter the signal.
+
 Targets are decisions at the close, not fills. Historical benchmark executes
 at the NEXT US session close. The automation adapter records its execution
 method separately; switching to an open window requires integration review.
@@ -14,10 +18,24 @@ from datetime import date
 WINDOW = 252
 EXIT_DD = -0.15
 ENTRY_DD = -0.12
-# The only place the two strategy symbols are defined. The defensive symbol is
-# QQQ in this version; replacing it (e.g. by SGOV) is a separate, reviewed change.
+# The only place the strategy symbols are defined. The signal stays on QQQ; the
+# defensive holding is SGOV from strategy version 2 on.
+SIGNAL_SYMBOL = "QQQ"
 RISK_SYMBOL = "TQQQ"
-DEFENSIVE_SYMBOL = "QQQ"
+DEFENSIVE_SYMBOL = "SGOV"
+STRATEGY_VERSION = "TQQQ_SGOV_DD15_12_252_v2"
+RULE = "DD15_12_252_v1"                 # the price rule itself is unchanged
+# Logical defensive target recorded by earlier strategy versions (signal cache,
+# switch intents, order payloads). Only the logical target maps; a real QQQ
+# order, fill or holding stays QQQ.
+LEGACY_DEFENSIVE = {"QQQ": DEFENSIVE_SYMBOL}
+
+
+def logical_target(target, strategy=None):
+    """Current-version meaning of a recorded target."""
+    if strategy == STRATEGY_VERSION:
+        return target
+    return LEGACY_DEFENSIVE.get(target, target)
 
 
 @dataclass(frozen=True)
@@ -90,7 +108,8 @@ def main():
     if dates[-1] != date.fromisoformat(args.expected_session):
         parser.error("last date differs from expected completed US session")
     decision = asdict(decisions([r["close"] for r in rows], args.initial_target)[-1])
-    decision.update(signal_date=dates[-1].isoformat(), rule="DD15_12_252_v1",
+    decision.update(signal_date=dates[-1].isoformat(), rule=RULE, strategy=STRATEGY_VERSION,
+                    signal_symbol=SIGNAL_SYMBOL,
                     execution="NEXT_US_SESSION_CLOSE", order_submitted=False)
     print(json.dumps(decision, ensure_ascii=False, indent=2))
 

@@ -40,6 +40,9 @@ class FakeMeritz:
         ny, kst = now.astimezone(NY), now.astimezone(KST)
         quote_time = ny.strftime("%H%M%S") if ny.hour >= 9 and ny.hour < 16 else "160000"
         self.closes = dict(SEED)
+        # Market per symbol in this fake only. SGOV's AX is a test fixture, not a
+        # verified Meritz route (the user confirms it with doctor's probe).
+        self.markets = {"BRK.B": "NY", "SGOV": TEST_SGOV_MARKET}
         self.responses = {
             "/accounts/v1/me/deposit": dict(rsp_cd="5766", data=dict(
                 tfam="1500000", drng_able_amt="1500000", oder_able_cash_amt="1500000", d2_aft_tfam="1500000",
@@ -63,20 +66,27 @@ class FakeMeritz:
                         mrkt_fin_time=ny.replace(hour=16, minute=0).astimezone(KST).strftime("%H%M"))
                    if quote_time != "160000" else dict(ovrs_mkop_cls_code="012", mrkt_begn_time="0000", mrkt_fin_time="0000")))),
             "/market/v1/overseas/orderbook": lambda q: dict(rsp_cd="0000", data=dict(
-                acpl_hour=quote_time, bidp1=self.price(q["iscd"]), askp1=str(D(self.price(q["iscd"])) + D("0.01")))),
+                acpl_hour=quote_time, bidp1=self.price(q["iscd"]), askp1=str(D(self.price(q["iscd"])) + D("0.01")))
+                if self.listed(q) else dict(acpl_hour="000000", bidp1="0", askp1="0")),
             "/market/v1/overseas/prices": lambda q: dict(rsp_cd="0000", data=dict(
                 iscd=q["iscd"], crnc_code="USD", prpr=self.price(q["iscd"]), prdy_clpr=self.price(q["iscd"]),
                 issu_stat_cls_code="N", vcm_stat_cls_code="N", shnu_aspr_unit="0", seln_aspr_unit="0",
-                sell_only="0", lvrg="3.0" if q["iscd"] == "TQQQ" else "1.0", shnu_oder_qty_unit="1")),
+                sell_only="0", lvrg="3.0" if q["iscd"] == "TQQQ" else "1.0", shnu_oder_qty_unit="1",
+                seln_oder_qty_unit="1", etf_yn="Y")
+                # Documented: a wrong market answers 0000 with blank values.
+                if self.listed(q) else dict(iscd="", crnc_code="", prpr="0", prdy_clpr="0")),
             "/market/v1/overseas/candles/days": lambda q: dict(rsp_cd="0000", data=[
                 dict(date=d.replace("-", ""), prpr=p) for d, p in sorted(self.closes.items(), reverse=True)
                 if q["from"] <= d.replace("-", "") <= q["to"]]),
         }
         self.responses.update(overrides)
 
+    def listed(self, query):
+        return query.get("mrkt_cls_code") == self.markets.get(query["iscd"], "OQ")
+
     @staticmethod
     def price(symbol):
-        return {"TQQQ": "70.00", "QQQ": "600.00", "QQQM": "250.00", "BRK.B": "480.00"}.get(symbol, "10.00")
+        return {"TQQQ": "70.00", "QQQ": "600.00", "SGOV": "100.50", "QQQM": "250.00", "BRK.B": "480.00"}.get(symbol, "10.00")
 
     def __call__(self, method, path, query=None, body=None, *, token=None, form=False, paced=False):
         self.calls.append((method, path))
@@ -105,6 +115,9 @@ class FakeMeritz:
             response["data"] = [r for r in response["data"] if "rsev_acpt_date" not in r
                                 or query["iqry_sta_date"] <= r["rsev_acpt_date"] <= query["iqry_fin_date"]]
         return response
+
+
+TEST_SGOV_MARKET = "AX"
 
 
 def holding(symbol, qty, kind="1"):
@@ -154,7 +167,7 @@ class Harness(unittest.TestCase):
             report = collect(cfg=cfg, state=self.state, settings=settings, now=now, schedule=self.schedule(now),
                              journal=self.journal, root=ROOT,
                              client_factory=lambda: Client(self.state, allow_mutations=False),
-                             broker_factory=lambda c: Meritz(c, self.journal))
+                             broker_factory=lambda c: Meritz(c, self.journal, settings.instrument_markets))
         return report, fake
 
     def codes(self, report):
@@ -293,7 +306,7 @@ class DoctorTests(Harness):
             report = collect(cfg={}, state=self.state, settings=Settings(), now=KRW_MORNING,
                              schedule=self.schedule(KRW_MORNING), journal=self.journal, root=ROOT,
                              client_factory=lambda: Client(self.state, allow_mutations=True),
-                             broker_factory=lambda c: Meritz(c, self.journal))
+                             broker_factory=lambda c: Meritz(c, self.journal, settings.instrument_markets))
         self.assertEqual(report["auth"]["status"], "error")
         self.assertEqual(fake.calls, [])
 

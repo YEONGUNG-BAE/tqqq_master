@@ -16,6 +16,7 @@ from pathlib import Path
 from autotrader.core import D, DONE, NOT_SENT, Engine, Journal, Settings
 from autotrader.replay import PersistentPaper
 from autotrader.tax_reserve import TaxPlan
+from autotrader.signal import DEFENSIVE_SYMBOL
 from crash_helpers import run_child
 
 OPEN = datetime(2026, 10, 15, 13, 30, tzinfo=timezone.utc)
@@ -24,7 +25,7 @@ CUTOFF = datetime(2026, 10, 15, 19, 50, tzinfo=timezone.utc)
 JAN = datetime(2027, 1, 20, 14, 31, tzinfo=timezone.utc)
 
 
-def recover_step(now, target="QQQ"):
+def recover_step(now, target=DEFENSIVE_SYMBOL):
     return dict(now=now.isoformat(), target=target, signal_date="2026-10-14", expected_signal_date="2026-10-14",
                 session="2026-10-15", may_trade=False, may_manage_orders=True, may_recover=True,
                 recovery_deadline=CUTOFF.isoformat())
@@ -43,7 +44,7 @@ class Restart:
     def __init__(self, db, tax=None, cap=None, reverse_fx=False):
         self.journal = Journal(db)
         self.broker = PersistentPaper(self.journal)
-        self.broker.prices.update({"QQQ": D(100), "TQQQ": D(70)})
+        self.broker.prices.update({DEFENSIVE_SYMBOL: D(100), "TQQQ": D(70)})
         self.engine = Engine(self.broker, self.journal, Settings(mode="paper"))
         self.engine.reverse_fx_verified = reverse_fx
         self.plan = None
@@ -64,7 +65,7 @@ class SwitchCrashTests(unittest.TestCase):
 
     def child(self, steps, **spec):
         result = run_child(dict(db=self.db, initial={"usd": "0", "positions": {"TQQQ": 10}},
-                                prices={"QQQ": "100", "TQQQ": "70"}, steps=steps, **spec))
+                                prices={DEFENSIVE_SYMBOL: "100", "TQQQ": "70"}, steps=steps, **spec))
         self.assertEqual(result.returncode, 0, result.stderr)
         return result
 
@@ -85,7 +86,7 @@ class SwitchCrashTests(unittest.TestCase):
         r = Restart(self.db)
         try:
             buys = [o for o in r.broker.orders.values() if o["side"] == "buy"]
-            self.assertEqual([o["symbol"] for o in buys], ["QQQ"])  # exactly one target buy
+            self.assertEqual([o["symbol"] for o in buys], [DEFENSIVE_SYMBOL])  # exactly one target buy
         finally:
             r.close()
 
@@ -115,7 +116,7 @@ class AtomicityTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         db = str(Path(tmp.name) / "journal.sqlite")
         result = run_child(dict(db=db, initial={"usd": "0", "positions": {"TQQQ": 10}},
-                                prices={"QQQ": "100", "TQQQ": "70"},
+                                prices={DEFENSIVE_SYMBOL: "100", "TQQQ": "70"},
                                 steps=[recover_step(AFTER), {"fill": True}, recover_step(AFTER + timedelta(seconds=30))],
                                 kill="Journal.update", kill_when="done"))
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -157,7 +158,7 @@ class LegacyDatabaseTests(unittest.TestCase):
             for i in range(3):
                 r.engine.tick(**step(AFTER + timedelta(minutes=5 + i)))
             buys = [o for o in r.broker.orders.values() if o["side"] == "buy"]
-            self.assertEqual([o["symbol"] for o in buys], ["QQQ"])
+            self.assertEqual([o["symbol"] for o in buys], [DEFENSIVE_SYMBOL])
             events = [json.loads(e[0]) for e in r.journal.db.execute(
                 "SELECT body FROM events WHERE category IN ('switch_reopened','effects_replayed')")]
             self.assertEqual(sum(1 for e in events if e.get("what") == "switch"), 1)   # replayed once
