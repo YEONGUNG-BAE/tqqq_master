@@ -479,8 +479,12 @@ def sync(db, broker, sessions, now, start="00000000", on_ledger=None):
             set_fill_fee(db, fill_key, _num(matches[0].get("ovsc_deal_fee")) + _num(matches[0].get("fee")),
                          "cash ledger (unique match)")
     for t in ledger:
+        # Dividends and ETF distributions (SGOV pays monthly). The exact Meritz
+        # label for an ETF distribution is not in the spec, so both words are
+        # accepted; the paid amount and withheld tax are stored as reported.
+        # Keyed by the ledger serial, so a re-read records nothing twice.
         name = str(t.get("smcd_name", ""))
-        if "배당" in name and _num(t.get("frcr_tr_amt")) > 0 and str(t.get("cncl_yn", "N")) != "Y":
+        if ("배당" in name or "분배" in name) and _num(t.get("frcr_tr_amt")) > 0 and str(t.get("cncl_yn", "N")) != "Y":
             day = str(t["tr_date"])
             record_dividend(db, f"div:{t.get('tran_srno')}", f"{day[:4]}-{day[4:6]}-{day[6:]}", _symbol(t) or None,
                             _num(t["frcr_tr_amt"]), _num(t.get("intx")), None, None, now)
