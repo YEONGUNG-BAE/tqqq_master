@@ -79,7 +79,8 @@ def tax_report_lines(db, settings, now, extra=None, estimate_fn=None, years=None
     return lines
 
 
-HELP = ("명령 (모든 상태 변경 명령 끝에 귀속연도를 붙일 수 있습니다. 준비 중인 연도가 둘 이상이거나 없으면 연도를 꼭 붙이세요)\n"
+HELP = ("명령 (상태 변경 명령 끝에 귀속연도를 붙일 수 있습니다. 준비 중인 연도가 둘 이상이면 꼭 붙이세요. "
+        "준비 중인 연도가 없으면 계획 명령은 올해 귀속으로, 출금·납부·정정·해제는 연도를 붙여야 처리합니다)\n"
         "/tax 세금 예상·준비 상황\n"
         "/tax_external 금액 YYYY-MM-DD [연도]  외부 재원 계획 총액·예정일\n"
         "/tax_secured 금액 [연도]  외부 재원 실제 확보액(계좌 밖, 미사용)\n"

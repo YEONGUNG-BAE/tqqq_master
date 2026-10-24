@@ -28,8 +28,9 @@
     "basic_deduction_krw": 2500000,
     "rate": "0.22",
     "ledger_start": "00000000",
-    "payment_deadline": null,
-    "payment_deadline_verified": false,
+    "payment_deadlines": {
+      "2026": {"date": null, "verified": false}
+    },
     "settlement_buffer_days": 7,
     "installment_day": 15
   },

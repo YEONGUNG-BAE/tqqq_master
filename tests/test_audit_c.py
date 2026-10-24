@@ -1,5 +1,6 @@
 """Audit fixes 5-7: ledger completeness, settlement dates outside the calendar,
 tax years and deadlines across the May/June boundary. No network."""
+import json
 import os
 import tempfile
 import unittest
@@ -163,6 +164,14 @@ class TaxYearTests(unittest.TestCase):
         self.assertEqual(plan.status(2027, datetime(2028, 1, 20, tzinfo=timezone.utc))["reserve_krw"], 0)
         plan.release(2026, datetime(2028, 1, 20, tzinfo=timezone.utc))      # an older year can still be released
         self.assertEqual(plan.status(2026, datetime(2028, 1, 20, tzinfo=timezone.utc))["reserve_krw"], 0)
+
+    def test_example_config_with_a_null_deadline_means_unset(self):
+        example = json.loads((Path(__file__).resolve().parent.parent / "config.example.json").read_text())
+        plan = TaxPlan(self.journal.db, example["tax"], lambda y: {"estimated_tax_krw": D(1), "complete": True},
+                       lambda: D(1400))
+        self.assertIsNone(plan.deadline_for(2026))
+        self.assertEqual(plan.rounds(2026)[-1], date(2027, 5, 15))
+        self.assertIsNone(plan.status(2026, datetime(2027, 1, 20, tzinfo=timezone.utc))["deadline"])
 
     def test_settlement_buffer_counts_calendar_days(self):
         plan = TaxPlan(self.journal.db, {"payment_deadlines": {"2026": "2027-05-10"}, "settlement_buffer_days": 5},

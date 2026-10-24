@@ -10,7 +10,7 @@
 .venv/bin/python -m autotrader doctor --config config.json --json
 .venv/bin/python -m autotrader run --config config.json      # observe: 계획만 기록
 .venv/bin/python -m autotrader replay --scenario examples/self_irregular.json --state paper_self [--sessions N]
-.venv/bin/python -m autotrader status --config config.json    # 잠금·보류·진행 중 요청 (요청 전송 없음)
+.venv/bin/python -m autotrader status --config config.json    # 잠금·보류·진행 중 요청·장부 진단 (요청 전송 없음)
 .venv/bin/python -m autotrader unlock --config config.json --note '...'   # 원인 해소 후 거래 잠금 해제
 .venv/bin/python -m autotrader tax --config config.json       # 저장된 원장으로 예상 세액 (네트워크 없음)
 .venv/bin/python -m autotrader tax-sync --config config.json  # 세무 원장 동기화 (GET 조회만)
@@ -47,6 +47,8 @@ exchange-calendars의 NumPy DeprecationWarning은 알려진 경고다. 근거 �
 - 세금 준비금(원화·달러)은 환전·재투자에서 제외한다. 금액 상태(납부 완료·원화 준비금·달러 준비금·출금 확인 대기·진행 중·외부 재원)는 한 금액이 한 상태에만 속하게 따로 저장하고, 이동은 감사 기록과 함께 원자적으로 한다.
 - 세금 목적 매도는 회차 부족분(1주 올림 초과분은 부족분 이하)과 사용자가 별도로 정한 연간 상한을 모두 넘지 않을 때만 한다. 상한이 없거나 원장이 불완전하면 관찰 계획만 남긴다. 전략 전환을 세금 작업 때문에 미루지 않는다.
 - 달러→원화 역환전은 `verified.reverse_fx`가 true일 때만 실행한다. 송금·신고·납부는 사용자가 한다.
+- 세금 금액·기한·회차는 귀속연도별로 관리한다. 미납 연도는 6월이 지나도 준비 중으로 남고, 다른 연도의 기한을 빌려 쓰지 않는다. 대상 연도가 모호한 상태 변경 명령은 처리하지 않고 연도를 요청한다.
+- 이전 버전이 남긴 장부 불일치는 근거가 충분할 때만 멱등적으로 복구하고 감사 기록을 남긴다. 근거가 부족하면 정상으로 꾸미지 않고 보류·확인 절차로 남긴다(`status`의 `books`).
 - 외부 감시는 거래 Mac이 아닌 호스트에서 돌리고, 증권사 키·계좌 접근·주문 권한을 주지 않는다. 다른 기기가 주문을 이어받는 구조를 만들지 않는다. 상태 발신은 정해진 필드만(수량·금액·계좌·주문번호·원시 오류·키 없이) 서명해서 보내고, 거래 판단이 끝난 뒤 짧은 시간 제한으로만 보낸다.
 - 기존 비전략 보유(QQQM·BRK.B 등)는 자동 매도·전환하지 않는다. `migrate_symbols`에 사용자가 명시할 때만 예외다.
 - 비밀(`secrets.env`, `token.json`)과 상태(`state*/`, `paper_*/`)는 Git에서 제외한다. 내용을 출력하지 않는다. `paper_self`와 상태 DB는 삭제하거나 초기화하지 않는다.

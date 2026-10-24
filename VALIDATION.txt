@@ -1,18 +1,81 @@
-# 검증 출력 — 2026-10-24 10:34 KST, macOS Darwin 25.5.0
+# 검증 출력 — 2026-10-24 11:39 KST, macOS Darwin 25.5.0
 # Python 3.14.5 | exchange-calendars 4.12 | pandas 2.3.3 | NumPy 2.5.4
 # 명령: .venv/bin/python -m unittest discover -s tests -v
 # exchange-calendars의 NumPy DeprecationWarning은 알려진 경고이며 결과에 영향 없음
 # 공식 포털 명세(vendor/meritz-portal-20261015.json)를 받아 둔 상태의 결과. 없으면 명세 대조 3개가 건너뜀
 
+test_a_payment_from_secured_external_money_consumes_it (test_audit_b.ExternalFundsTests.test_a_payment_from_secured_external_money_consumes_it) ... ok
+test_b_deposit_before_the_planned_date_is_counted_once (test_audit_b.ExternalFundsTests.test_b_deposit_before_the_planned_date_is_counted_once) ... ok
+test_deposit_matched_twice_or_redelivered_moves_once (test_audit_b.ExternalFundsTests.test_deposit_matched_twice_or_redelivered_moves_once) ... ok
+test_payment_source_must_be_named_when_ambiguous_and_never_goes_negative (test_audit_b.ExternalFundsTests.test_payment_source_must_be_named_when_ambiguous_and_never_goes_negative) ... ok
+test_smaller_bonus_is_reflected_in_remaining_installments_without_resecuring (test_audit_b.ExternalFundsTests.test_smaller_bonus_is_reflected_in_remaining_installments_without_resecuring) ... ok
+test_unconfirmed_deposit_is_held_back_but_not_krw_ready (test_audit_b.ExternalFundsTests.test_unconfirmed_deposit_is_held_back_but_not_krw_ready) ... ok
+test_concurrent_threads_apply_each_message_once_and_offset_never_moves_back (test_audit_b.TelegramConcurrencyTests.test_concurrent_threads_apply_each_message_once_and_offset_never_moves_back) ... ok
+test_lost_reply_does_not_reapply_the_change (test_audit_b.TelegramConcurrencyTests.test_lost_reply_does_not_reapply_the_change) ... ok
+test_two_receivers_that_read_the_same_offset_apply_once (test_audit_b.TelegramConcurrencyTests.test_two_receivers_that_read_the_same_offset_apply_once) ... ok
+test_failed_or_stale_sync_keeps_tax_sells_on_hold_until_fixed (test_audit_c.LedgerCompletenessTests.test_failed_or_stale_sync_keeps_tax_sells_on_hold_until_fixed) ... ok
+test_holdings_not_checked_is_not_complete (test_audit_c.LedgerCompletenessTests.test_holdings_not_checked_is_not_complete) ... ok
+test_strategy_switch_still_runs_while_tax_data_is_incomplete (test_audit_c.LedgerCompletenessTests.test_strategy_switch_still_runs_while_tax_data_is_incomplete) ... ok
+test_symbol_only_in_the_account_and_a_normal_empty_account (test_audit_c.LedgerCompletenessTests.test_symbol_only_in_the_account_and_a_normal_empty_account) ... ok
+test_symbol_only_in_the_ledger_is_compared_as_zero_held (test_audit_c.LedgerCompletenessTests.test_symbol_only_in_the_ledger_is_compared_as_zero_held) ... ok
+test_tax_reply_uses_the_engine_holdings_and_completeness (test_audit_c.LedgerCompletenessTests.test_tax_reply_uses_the_engine_holdings_and_completeness) ... ok
+test_settlement_cycle_follows_the_era_around_the_t1_switch (test_audit_c.SettlementTests.test_settlement_cycle_follows_the_era_around_the_t1_switch) ... <project>/.venv/lib/python3.14/site-packages/exchange_calendars/exchange_calendar.py:65: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  ONE_HOUR = pd.Timedelta("1h")
+<project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+ok
+test_trade_before_the_calendar_gets_no_made_up_settlement_date (test_audit_c.SettlementTests.test_trade_before_the_calendar_gets_no_made_up_settlement_date) ... <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+ok
+test_wrong_stored_settlement_dates_are_repaired_once_with_an_audit (test_audit_c.SettlementTests.test_wrong_stored_settlement_dates_are_repaired_once_with_an_audit) ... <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+ok
+test_ambiguous_year_is_refused_and_explicit_year_is_applied (test_audit_c.TaxYearCommandTests.test_ambiguous_year_is_refused_and_explicit_year_is_applied) ... ok
+test_money_command_with_no_open_year_asks_for_the_year (test_audit_c.TaxYearCommandTests.test_money_command_with_no_open_year_asks_for_the_year) ... ok
+test_engine_works_on_the_oldest_year_that_still_needs_money (test_audit_c.TaxYearTests.test_engine_works_on_the_oldest_year_that_still_needs_money) ... ok
+test_example_config_with_a_null_deadline_means_unset (test_audit_c.TaxYearTests.test_example_config_with_a_null_deadline_means_unset) ... ok
+test_june_deadline_keeps_the_previous_year_due (test_audit_c.TaxYearTests.test_june_deadline_keeps_the_previous_year_due) ... ok
+test_next_year_schedule_never_reuses_another_years_deadline (test_audit_c.TaxYearTests.test_next_year_schedule_never_reuses_another_years_deadline) ... ok
+test_notices_cover_every_open_year (test_audit_c.TaxYearTests.test_notices_cover_every_open_year) ... ok
+test_per_year_deadlines_and_separate_reserves (test_audit_c.TaxYearTests.test_per_year_deadlines_and_separate_reserves) ... ok
+test_settlement_buffer_counts_calendar_days (test_audit_c.TaxYearTests.test_settlement_buffer_counts_calendar_days) ... ok
+test_two_unpaid_years_require_an_explicit_year (test_audit_c.TaxYearTests.test_two_unpaid_years_require_an_explicit_year) ... ok
+test_unpaid_previous_year_stays_due_after_may_and_late_payment_lands_there (test_audit_c.TaxYearTests.test_unpaid_previous_year_stays_due_after_may_and_late_payment_lands_there) ... ok
+test_done_reverse_fx_without_its_tax_booking (test_audit_d.ExistingDbTests.test_done_reverse_fx_without_its_tax_booking) ... ok
+test_done_switch_order_without_its_switch_booking (test_audit_d.ExistingDbTests.test_done_switch_order_without_its_switch_booking) ... ok
+test_fresh_db_is_clean_and_repairs_record_nothing (test_audit_d.ExistingDbTests.test_fresh_db_is_clean_and_repairs_record_nothing) ... ok
+test_orphan_reservations_of_unsent_or_missing_requests (test_audit_d.ExistingDbTests.test_orphan_reservations_of_unsent_or_missing_requests) ... ok
+test_unresolved_request_is_reported_and_never_settled_automatically (test_audit_d.ExistingDbTests.test_unresolved_request_is_reported_and_never_settled_automatically) ... ok
+test_old_external_funds_table_is_migrated_once_with_an_audit (test_audit_d.ExistingTaxTablesTests.test_old_external_funds_table_is_migrated_once_with_an_audit) ... ok
+test_wrong_settlement_dates_are_found_then_repaired_once (test_audit_d.ExistingTaxTablesTests.test_wrong_settlement_dates_are_found_then_repaired_once) ... <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+ok
+test_active_reservation_blocks_reverse_fx (test_audit_d.ReverseFxReservationTests.test_active_reservation_blocks_reverse_fx) ... ok
+test_clean_complete_lookup_lets_reverse_fx_proceed (test_audit_d.ReverseFxReservationTests.test_clean_complete_lookup_lets_reverse_fx_proceed) ... ok
+test_failed_lookup_blocks_reverse_fx (test_audit_d.ReverseFxReservationTests.test_failed_lookup_blocks_reverse_fx) ... ok
+test_incomplete_lookup_blocks_reverse_fx_in_live (test_audit_d.ReverseFxReservationTests.test_incomplete_lookup_blocks_reverse_fx_in_live) ... ok
+test_lost_reply_is_settled_even_after_a_reservation_appears_and_never_resent (test_audit_d.ReverseFxReservationTests.test_lost_reply_is_settled_even_after_a_reservation_appears_and_never_resent) ... ok
 test_cancel_confirmed_vs_cancel_requested (test_automation.AdapterTests.test_cancel_confirmed_vs_cancel_requested) ... ok
 test_no_automatic_warning_ack (test_automation.AdapterTests.test_no_automatic_warning_ack) ... ok
 test_observe_transport_blocks_post_before_network (test_automation.AdapterTests.test_observe_transport_blocks_post_before_network) ... ok
 test_partial_cancel_does_not_finish_original_order (test_automation.AdapterTests.test_partial_cancel_does_not_finish_original_order) ... ok
 test_successful_post_is_not_retried_on_expired_token (test_automation.AdapterTests.test_successful_post_is_not_retried_on_expired_token) ... ok
-<project>/.venv/lib/python3.14/site-packages/exchange_calendars/exchange_calendar.py:65: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
-  ONE_HOUR = pd.Timedelta("1h")
-<project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
-  delta = pd.Timedelta(
 <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
   delta = pd.Timedelta(
 <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
@@ -48,6 +111,17 @@ test_stale_or_crossed_quote_stops (test_automation.ExecutionTests.test_stale_or_
 test_stale_signal_no_actions (test_automation.ExecutionTests.test_stale_signal_no_actions) ... ok
 test_unknown_positions_untouched (test_automation.ExecutionTests.test_unknown_positions_untouched) ... ok
 test_warning_not_automatically_accepted (test_automation.ExecutionTests.test_warning_not_automatically_accepted) ... ok
+test_no_done_order_without_its_switch_entry_on_disk (test_crash_recovery.AtomicityTests.test_no_done_order_without_its_switch_entry_on_disk) ... ok
+test_done_tax_sell_with_open_reservation_is_finished_once (test_crash_recovery.LegacyDatabaseTests.test_done_tax_sell_with_open_reservation_is_finished_once) ... ok
+test_falsely_completed_intent_is_reopened_and_finished_once (test_crash_recovery.LegacyDatabaseTests.test_falsely_completed_intent_is_reopened_and_finished_once) ... ok
+test_kill_after_fx_out_done_moves_the_reserve_once (test_crash_recovery.ReverseFxCrashTests.test_kill_after_fx_out_done_moves_the_reserve_once) ... ok
+test_kill_after_buy_done_commit_counts_the_spend_once (test_crash_recovery.SwitchCrashTests.test_kill_after_buy_done_commit_counts_the_spend_once) ... ok
+test_kill_after_sell_done_commit_still_buys_the_target (test_crash_recovery.SwitchCrashTests.test_kill_after_sell_done_commit_still_buys_the_target) ... ok
+test_kill_after_reservation_before_send_releases_it (test_crash_recovery.TaxCrashTests.test_kill_after_reservation_before_send_releases_it) ... ok
+test_kill_after_tax_sell_done_moves_proceeds_exactly_once (test_crash_recovery.TaxCrashTests.test_kill_after_tax_sell_done_moves_proceeds_exactly_once) ... ok
+test_kill_between_intent_and_reservation_leaves_nothing_counted (test_crash_recovery.TaxCrashTests.test_kill_between_intent_and_reservation_leaves_nothing_counted) ... ok
+test_orphan_reservation_on_a_terminal_request_is_released (test_crash_recovery.TaxCrashTests.test_orphan_reservation_on_a_terminal_request_is_released) ... ok
+test_unknown_request_keeps_its_reservation_and_is_not_resent (test_crash_recovery.TaxCrashTests.test_unknown_request_keeps_its_reservation_and_is_not_resent) ... ok
 test_cli_doctor_with_live_config_is_read_only_and_redacted (test_doctor.DoctorTests.test_cli_doctor_with_live_config_is_read_only_and_redacted) ... ok
 test_credit_debt_is_listed_and_blocks (test_doctor.DoctorTests.test_credit_debt_is_listed_and_blocks) ... ok
 test_dividend_adjusted_closes_block_signal_but_keep_fx_plan (test_doctor.DoctorTests.test_dividend_adjusted_closes_block_signal_but_keep_fx_plan) ... ok
@@ -76,8 +150,8 @@ test_token_refusal_is_explicit_and_post_token_error_is_not_resent (test_fault_in
 test_repeated_token_refusal_locks_and_unlock_resumes (test_fault_injection.CliAuthLockTests.test_repeated_token_refusal_locks_and_unlock_resumes) ... ok
 test_overlapping_scheduler_or_second_state_folder_does_nothing (test_fault_injection.CliConcurrencyTests.test_overlapping_scheduler_or_second_state_folder_does_nothing) ... ok
 test_corrupt_state_database_blocks_every_request (test_fault_injection.CliStateAndNotificationTests.test_corrupt_state_database_blocks_every_request) ... ok
-test_daily_close_outage_still_reaches_the_engine (test_fault_injection.CliStateAndNotificationTests.test_daily_close_outage_still_reaches_the_engine) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:694: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c169300>
-  raise AttributeError(name)
+test_daily_close_outage_still_reaches_the_engine (test_fault_injection.CliStateAndNotificationTests.test_daily_close_outage_still_reaches_the_engine) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a1afd30>
+  def __init__(self, name, parent):
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
 test_failed_heartbeat_reaches_telegram_on_the_next_run (test_fault_injection.CliStateAndNotificationTests.test_failed_heartbeat_reaches_telegram_on_the_next_run) ... ok
@@ -243,7 +317,11 @@ test_pre_ledger_holdings_sold_are_cost_incomplete_and_unexplained (test_tax.Fifo
 test_tax_ledger_problems_never_block_strategy_switch (test_tax.FifoTests.test_tax_ledger_problems_never_block_strategy_switch) ... ok
 test_unit_error_missing_fx_and_missing_fee_are_incomplete (test_tax.FifoTests.test_unit_error_missing_fx_and_missing_fee_are_incomplete) ... ok
 test_year_follows_settlement_date_across_new_year (test_tax.FifoTests.test_year_follows_settlement_date_across_new_year) ... ok
-test_sync_records_completed_fills_fees_dividends_and_rates_idempotently (test_tax.SyncTests.test_sync_records_completed_fills_fees_dividends_and_rates_idempotently) ... ok
+test_sync_records_completed_fills_fees_dividends_and_rates_idempotently (test_tax.SyncTests.test_sync_records_completed_fills_fees_dividends_and_rates_idempotently) ... <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+ok
 test_amounts_are_allowed_only_in_tax_messages_and_free_text_stays_masked (test_tax.TaxNoticeTests.test_amounts_are_allowed_only_in_tax_messages_and_free_text_stays_masked) ... ok
 test_december_estimate_and_january_recalculation_once_each (test_tax.TaxNoticeTests.test_december_estimate_and_january_recalculation_once_each) ... ok
 test_a_failing_handler_consumes_the_update_and_changes_nothing (test_tax.TelegramTests.test_a_failing_handler_consumes_the_update_and_changes_nothing) ... ok
@@ -276,6 +354,6 @@ test_registered_withdrawal_moves_once_and_unrelated_ones_are_not_tax (test_tax_r
 test_release_only_by_explicit_user_command (test_tax_reserve.WithdrawalTests.test_release_only_by_explicit_user_command) ... ok
 
 ----------------------------------------------------------------------
-Ran 259 tests in 8.629s
+Ran 311 tests in 9.584s
 
 OK

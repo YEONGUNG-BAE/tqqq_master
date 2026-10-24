@@ -145,8 +145,8 @@ class TaxPlan:
     def deadline_for(self, year):
         """{'date', 'verified', 'source'} for this tax year only, or None."""
         entry = self.deadlines_cfg.get(str(year))
-        if entry:
-            entry = entry if isinstance(entry, dict) else {"date": entry}
+        entry = entry if isinstance(entry, dict) else {"date": entry}
+        if entry.get("date"):                            # a null date (example config) means unset
             return {"date": entry["date"], "verified": bool(entry.get("verified", False)), "source": "config"}
         if self.legacy_deadline and date.fromisoformat(self.legacy_deadline).year == int(year) + 1:
             return {"date": self.legacy_deadline, "verified": self.legacy_verified, "source": "config (legacy)"}
