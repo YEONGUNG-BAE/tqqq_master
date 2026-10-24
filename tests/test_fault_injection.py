@@ -993,7 +993,10 @@ class CliStateAndNotificationTests(Harness):
         self.assertEqual(code, 0)
         # Same day: the heartbeat is not raised again, yet Telegram now receives it.
         self.assertEqual([t for t in mac if t.startswith("[정상]")], heartbeat)
-        self.assertEqual([t for t in telegram if t.startswith("[정상]")], heartbeat * 2)
+        # The late copy carries its original time (a past event never reads as current).
+        late = [t for t in telegram if t.startswith("[재전송 · 발생 ")]
+        self.assertEqual([t.split("\n", 1)[1] for t in late], heartbeat)
+        self.assertEqual([t for t in telegram if t.startswith("[정상]")], heartbeat)
 
     def test_unlock_refuses_while_a_request_is_unresolved(self):
         root = self.setup_cli(notifications=False)
@@ -1197,7 +1200,10 @@ class NotifierTests(unittest.TestCase):
         self.assertEqual(later.retry_pending(NOW + timedelta(minutes=120)), 0)  # delivered: nothing pending
         self.assertEqual(len(mac), 1)                                   # macOS never repeated
         self.assertEqual(len(telegram), 3)
-        self.assertEqual(telegram[0], telegram[-1])                     # the same stored text
+        # The same stored text, headed with when it first happened (requirement: a
+        # re-sent message must not read as a current problem).
+        self.assertTrue(telegram[-1].startswith("[재전송 · 발생 "))
+        self.assertEqual(telegram[-1].split("\n", 1)[1], telegram[0])
         self.assertEqual(self.journal.meta("notify_pending"), {})
 
     def test_failed_message_retries_stop_after_a_day(self):

@@ -10,6 +10,9 @@ and alerts directly (Telegram, plus an optional backup webhook) when:
   held             alive, but runs keep ending in a hold or an error
   signal_stale     alive, but the completed-close signal did not advance
   switch_overdue   a confirmed switch is not finished by its completion deadline
+                   (skipped when the Mac's own final notice was delivered)
+  switch_alert_undelivered
+                   the Mac raised a switch-delay alert but could not deliver it
 
 Session timing (holidays, early closes, daylight saving) comes from the exchange
 calendar. A deadline passing only raises an alert: it never unlocks, overrides
@@ -92,6 +95,8 @@ MESSAGES = {
     "held": "거래 Mac은 살아 있지만 실행이 계속 보류·오류로 끝납니다.",
     "signal_stale": "거래 Mac은 살아 있지만 종가 신호가 갱신되지 않았습니다.",
     "switch_overdue": "확정 신호에 따른 전환이 완료 기한까지 끝나지 않았습니다. (외부 감시는 주문하지 않습니다)",
+    "switch_alert_undelivered": "거래 Mac이 보낸 전환 지연 알림이 전달되지 않았습니다. 전환이 지연 중입니다. "
+                                "(외부 감시는 주문하지 않습니다)",
 }
 
 
@@ -160,7 +165,12 @@ class Monitor:
             close = next(s[2] for s in schedule.sessions if s[0] == expected)
             if (st.get("signal_date") or "") < expected and now > close + timedelta(minutes=self.cfg["signal_grace_minutes"]):
                 conditions.append((f"{instance}:signal_stale", "signal_stale"))
-            if st.get("switch_status") in ("selling", "buying") and st.get("switch_signal_date"):
+            # The Mac alerts switch delays itself; the monitor steps in only when that
+            # local alert did not get through, so one event is not sent twice.
+            if st.get("switch_alert") and st.get("switch_alert_delivered") is False:
+                conditions.append((f"{instance}:switch_alert_undelivered", "switch_alert_undelivered"))
+            local_final = st.get("switch_alert") == "final" and st.get("switch_alert_delivered")
+            if st.get("switch_status") in ("selling", "buying") and st.get("switch_signal_date") and not local_final:
                 later = [s for s in schedule.sessions if s[0] > st["switch_signal_date"]]
                 if later:
                     deadline = (later[0][2] - timedelta(minutes=self.cfg["recovery_buffer_minutes"])

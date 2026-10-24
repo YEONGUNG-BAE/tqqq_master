@@ -22,7 +22,9 @@ from urllib.request import Request, urlopen
 from uuid import uuid4
 
 FIELDS = ("v", "instance", "seq", "sent_at", "run_at", "work_done_at", "outcome", "signal_date", "target",
-          "aligned", "switch_status", "switch_to", "switch_signal_date", "hold_code", "lock_code")
+          "aligned", "switch_status", "switch_to", "switch_signal_date", "hold_code", "lock_code",
+          # switch progress (progress.py): last real progress, wait code, local alert level and delivery
+          "switch_priority", "switch_last_progress", "switch_wait_code", "switch_alert", "switch_alert_delivered")
 _CODE = re.compile(r"[^a-z_]")
 
 
@@ -59,6 +61,13 @@ def build(journal, *, now, run_at, outcome, work_done):
                "switch_signal_date": intent.get("signal_date"),
                "hold_code": code_only(hold.get("message")) if outcome == "hold" else None,
                "lock_code": code_only(lock.get("code")) if journal.meta("halt") else None}
+    prog = journal.meta("switch_progress") or {}
+    active = bool(prog.get("intent_id")) and not prog.get("closed_at")
+    message.update(switch_priority=code_only(prog.get("priority")) if active else None,
+                   switch_last_progress=prog.get("last_progress_at") if active else None,
+                   switch_wait_code=code_only(prog.get("wait_code")) if active else None,
+                   switch_alert=code_only(prog.get("alert_level")) if active else None,
+                   switch_alert_delivered=bool(prog.get("alert_delivered")) if active and prog.get("alert_level") else None)
     if work_done:
         journal.put_meta("monitor_last_work", now.isoformat())
     else:
