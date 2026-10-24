@@ -1,4 +1,4 @@
-# 검증 출력 — 2026-10-24 13:12 KST, macOS Darwin 25.5.0
+# 검증 출력 — 2026-10-24 15:07 KST, macOS Darwin 25.5.0
 # Python 3.14.5 | exchange-calendars 4.12 | pandas 2.3.3 | NumPy 2.5.4
 # 명령: .venv/bin/python -m unittest discover -s tests -v
 # exchange-calendars의 NumPy DeprecationWarning은 알려진 경고이며 결과에 영향 없음
@@ -99,7 +99,7 @@ test_healthy_plan_baseline (test_audit_f.CliTests.test_healthy_plan_baseline) ..
   delta = pd.Timedelta(
 <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
   delta = pd.Timedelta(
-/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e1f44f0>
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10eeac6d0>
   d = dict(zip(self.fieldnames, row))
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
@@ -110,6 +110,8 @@ test_intraday_recovery_sells_the_risk_symbol_but_holds_the_buy (test_audit_f.Eng
 test_locks_still_stop_everything (test_audit_f.EngineTests.test_locks_still_stop_everything) ... ok
 test_order_sent_before_the_outage_is_still_settled (test_audit_f.EngineTests.test_order_sent_before_the_outage_is_still_settled) ... ok
 test_return_switch_sell_and_new_deposit_fx_are_held (test_audit_f.EngineTests.test_return_switch_sell_and_new_deposit_fx_are_held) ... ok
+test_failure_between_reserve_move_and_switch_books_rolls_both_back (test_audit_f.ReserveFromProceedsAfterOutageTests.test_failure_between_reserve_move_and_switch_books_rolls_both_back) ... ok
+test_reserve_taken_from_switch_proceeds_comes_out_of_the_switch_budget_once (test_audit_f.ReserveFromProceedsAfterOutageTests.test_reserve_taken_from_switch_proceeds_comes_out_of_the_switch_budget_once) ... ok
 test_tax_sell_in_flight_is_settled_and_booked_once_the_plan_returns (test_audit_f.TaxOrderDuringOutageTests.test_tax_sell_in_flight_is_settled_and_booked_once_the_plan_returns) ... ok
 test_cancel_confirmed_vs_cancel_requested (test_automation.AdapterTests.test_cancel_confirmed_vs_cancel_requested) ... ok
 test_no_automatic_warning_ack (test_automation.AdapterTests.test_no_automatic_warning_ack) ... ok
@@ -186,7 +188,7 @@ test_token_refusal_is_explicit_and_post_token_error_is_not_resent (test_fault_in
 test_repeated_token_refusal_locks_and_unlock_resumes (test_fault_injection.CliAuthLockTests.test_repeated_token_refusal_locks_and_unlock_resumes) ... ok
 test_overlapping_scheduler_or_second_state_folder_does_nothing (test_fault_injection.CliConcurrencyTests.test_overlapping_scheduler_or_second_state_folder_does_nothing) ... ok
 test_corrupt_state_database_blocks_every_request (test_fault_injection.CliStateAndNotificationTests.test_corrupt_state_database_blocks_every_request) ... ok
-test_daily_close_outage_still_reaches_the_engine (test_fault_injection.CliStateAndNotificationTests.test_daily_close_outage_still_reaches_the_engine) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e14fc40>
+test_daily_close_outage_still_reaches_the_engine (test_fault_injection.CliStateAndNotificationTests.test_daily_close_outage_still_reaches_the_engine) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10ee13880>
   def __init__(self, name, parent):
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
@@ -390,6 +392,6 @@ test_registered_withdrawal_moves_once_and_unrelated_ones_are_not_tax (test_tax_r
 test_release_only_by_explicit_user_command (test_tax_reserve.WithdrawalTests.test_release_only_by_explicit_user_command) ... ok
 
 ----------------------------------------------------------------------
-Ran 328 tests in 10.902s
+Ran 330 tests in 10.938s
 
 OK

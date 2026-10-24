@@ -921,7 +921,9 @@ class Engine:
     # switch WITHOUT investing new deposits or other idle cash.
 
     def _budget(self, intent):
-        return max(D(0), money(intent["proceeds"]) + money(intent["carried"]) - money(intent["spent"]))
+        # `to_tax`: proceeds later moved into the tax reserve (older intents lack it).
+        return max(D(0), money(intent["proceeds"]) + money(intent["carried"]) - money(intent["spent"])
+                   - money(intent.get("to_tax", "0")))
 
     def _save_intent(self, intent):
         intent["events"] = intent["events"][-50:]
@@ -1101,14 +1103,28 @@ class Engine:
         return self.tax_plan.reserved(now)
 
     def _secure_cash(self, snap, now, locked):
-        """Earmark unreserved cash for the current installment (no request sent)."""
+        """Earmark unreserved cash for the current installment (no request sent).
+        Cash outside an open switch's budget goes first; what is still due then
+        comes out of the switch proceeds, and the switch budget shrinks by the
+        same amount in the same transaction (so a restart counts it once)."""
         if locked:
             return
         for year in self._tax_years(now):         # oldest obligation first
             krw, usd = self._reserved(now)
-            self.tax_plan.allocate_cash(year, max(D(0), snap.krw - self.cfg.krw_reserve - krw),
-                                        max(D(0), snap.usd - self.cfg.usd_reserve - usd), now)
-        self.j.commit()
+            free_usd = max(D(0), snap.usd - self.cfg.usd_reserve - usd)
+            intent = self.j.meta("switch_intent")
+            open_switch = intent and intent["status"] not in ("done", "superseded")
+            budget = self._budget(intent) if open_switch else D(0)
+            with self.j.atomic():
+                self.tax_plan.allocate_cash(year, max(D(0), snap.krw - self.cfg.krw_reserve - krw),
+                                            max(D(0), free_usd - budget), now)
+                if budget > 0 and free_usd > 0:
+                    taken = self.tax_plan.earmark_proceeds(year, min(budget, free_usd), now)
+                    if taken > 0:
+                        intent["to_tax"] = str(money(intent.get("to_tax", "0")) + taken)
+                        intent["events"].append({"at": now.isoformat(), "action": "tax_reserve", "side": "reserve",
+                                                 "usd": str(taken), "year": year})
+                        self._save_intent(intent)
 
     def _tax_sell(self, snap, target, signal_date, session, now, deadline):
         """A whole-share sell of the held strategy symbol for the installment gap,

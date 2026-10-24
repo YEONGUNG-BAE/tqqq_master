@@ -15,7 +15,7 @@ from autotrader.core import D, Engine, Journal, Locked, Stop
 from autotrader.signal import DEFENSIVE_SYMBOL, RISK_SYMBOL
 from test_doctor import Harness, KRW_MORNING, SECRET_ENV, FakeMeritz
 from test_intraday_recovery import AFTER_WINDOW, OPEN, RecoveryBase
-from test_tax_reserve import TAX, ReserveBase
+from test_tax_reserve import JAN, TAX, ReserveBase
 
 DOWN = "tax plan unavailable (OperationalError)"
 
@@ -90,6 +90,85 @@ class TaxOrderDuringOutageTests(ReserveBase):
         self.assertEqual(st["in_progress_krw"], 0)
         self.assertGreater(st["reserve_usd"], 0)
         self.assertEqual(len([c for c in self.broker.calls if c[0] == "sell"]), 1)
+
+
+class ReserveFromProceedsAfterOutageTests(ReserveBase):
+    """Outage -> exit sell -> plan back -> reserve taken from the proceeds ->
+    switch finishes -> a later intraday deposit buys nothing."""
+
+    def recover(self, at, **kw):
+        return self.tick(at=at, target=DEFENSIVE_SYMBOL, may_trade=False, may_manage_orders=True, may_recover=True,
+                         recovery_deadline=JAN + timedelta(hours=5), **kw)
+
+    def buys(self):
+        return [c for c in self.broker.calls if c[0] == "buy"]
+
+    def test_reserve_taken_from_switch_proceeds_comes_out_of_the_switch_budget_once(self):
+        self.broker.positions = {RISK_SYMBOL: D(10)}
+        self.broker.prices[DEFENSIVE_SYMBOL] = D(100)
+        plan = self.engine.tax_plan
+        self.engine.tax_plan, self.engine.tax_unavailable = None, DOWN
+        self.assertEqual(self.tick(target=DEFENSIVE_SYMBOL), "submitted: order")          # exit sell
+        self.broker.fill(max(self.broker.orders))
+        self.assertEqual(self.tick(at=10, target=DEFENSIVE_SYMBOL), "confirmed: filled")
+        self.engine.tax_plan, self.engine.tax_unavailable = plan, None                     # plan back
+        self.assertEqual(self.recover(1200), "submitted: order")
+        reserve = self.st()["reserve_usd"]
+        self.assertGreater(reserve, 0)                                                     # installment from proceeds
+        intent = self.journal.meta("switch_intent")
+        proceeds = D(10) * D("69.93") * (1 - D("0.0015"))                                  # conservative estimate
+        to_tax = D(intent["to_tax"])
+        # Cash beyond the conservative estimate (outside the budget) is used first,
+        # the rest of the installment comes out of the proceeds and the budget.
+        self.assertLess(reserve - to_tax, D(1))
+        self.assertGreater(to_tax, 0)
+        self.assertEqual(Engine._budget(self.engine, intent), proceeds - to_tax)
+        buy = self.broker.orders[max(self.broker.orders)]
+        self.assertLessEqual(buy["qty"] * buy["price"] * (1 + D("0.0015")), proceeds - to_tax)
+        self.broker.fill(max(self.broker.orders))
+        self.recover(1230)
+        self.assertEqual(self.recover(1260), "idle: switch complete")
+        done = self.st()["reserve_usd"]
+        self.restart()                                                                     # counted once
+        self.recover(1290)
+        self.assertEqual(self.st()["reserve_usd"], done)
+        self.assertEqual(self.journal.meta("switch_history")[-1]["to_tax"], str(to_tax))
+        from_proceeds = self.journal.db.execute(
+            "SELECT amount FROM tax_moves WHERE from_state='switch_proceeds'").fetchall()
+        self.assertEqual(sum(D(a) for (a,) in from_proceeds), to_tax)
+        self.broker.usd += D(100)                                                          # later deposit
+        self.recover(1500)
+        self.assertEqual(len(self.buys()), 1)                                              # no recovery buy
+        self.assertEqual(self.journal.meta("switch_history")[-1]["to_tax"], str(to_tax))   # switch books unchanged
+        self.assertLess(self.st()["reserve_usd"] - done, D("0.05"))                        # at most a rounding cent
+
+    def test_failure_between_reserve_move_and_switch_books_rolls_both_back(self):
+        self.broker.positions = {RISK_SYMBOL: D(10)}
+        self.broker.prices[DEFENSIVE_SYMBOL] = D(100)
+        plan = self.engine.tax_plan
+        self.engine.tax_plan, self.engine.tax_unavailable = None, DOWN
+        self.tick(target=DEFENSIVE_SYMBOL)
+        self.broker.fill(max(self.broker.orders))
+        self.tick(at=10, target=DEFENSIVE_SYMBOL)
+        self.engine.tax_plan, self.engine.tax_unavailable = plan, None
+        original, failed = Engine._save_intent, []
+
+        def crash_once(engine, intent):
+            if "to_tax" in intent and not failed:
+                failed.append(1)
+                raise RuntimeError("crash between the two writes")
+            return original(engine, intent)
+        with patch.object(Engine, "_save_intent", crash_once), self.assertRaises(RuntimeError):
+            self.recover(1200)
+        self.journal.event("error", {"message": "Internal error: RuntimeError"}, JAN)    # as the CLI records it
+        self.restart()
+        self.assertEqual(self.journal.db.execute(
+            "SELECT count(*) FROM tax_moves WHERE from_state='switch_proceeds'").fetchone()[0], 0)
+        self.assertNotIn("to_tax", self.journal.meta("switch_intent"))
+        self.assertEqual(self.recover(1230), "submitted: order")                          # applied once now
+        intent = self.journal.meta("switch_intent")
+        moved = self.journal.db.execute("SELECT amount FROM tax_moves WHERE from_state='switch_proceeds'").fetchall()
+        self.assertEqual([D(a) for (a,) in moved], [D(intent["to_tax"])])
 
 
 class CliTests(Harness):
