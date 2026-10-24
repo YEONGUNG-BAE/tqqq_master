@@ -79,7 +79,8 @@ def tax_report_lines(db, settings, now, extra=None, estimate_fn=None, years=None
     return lines
 
 
-HELP = ("명령 (상태 변경 명령 끝에 귀속연도를 붙일 수 있습니다. 준비 중인 연도가 둘 이상이면 꼭 붙이세요. "
+HELP = ("조회: /status (상태), /issues (문제·필요한 조치) — '상태', '왜 멈췄어', '문제'라고 보내도 됩니다\n"
+        "명령 (상태 변경 명령 끝에 귀속연도를 붙일 수 있습니다. 준비 중인 연도가 둘 이상이면 꼭 붙이세요. "
         "준비 중인 연도가 없으면 계획 명령은 올해 귀속으로, 출금·납부·정정·해제는 연도를 붙여야 처리합니다)\n"
         "/tax 세금 예상·준비 상황\n"
         "/tax_external 금액 YYYY-MM-DD [연도]  외부 재원 계획 총액·예정일\n"
@@ -105,11 +106,40 @@ class Context:
         self.years = years
 
 
+# Read-only views. Fixed Korean phrases are aliases; free text is never read as
+# an instruction, and "okay/resume" replies never unlock, resend or sell.
+READONLY = {"/status": "status", "/상태": "status", "/issues": "issues", "/문제": "issues", "/help": "help",
+            "/start": "help"}
+ALIASES = {"상태": "/status", "왜 멈췄어": "/issues", "왜멈췄어": "/issues", "문제": "/issues"}
+ACKS = ("확인했어", "재개", "괜찮아", "풀어줘", "해제")
+ACK_REPLY = ("이 채팅의 답장으로는 잠금 해제·주문 재전송·verified 변경·보유 매도를 하지 않습니다. 필요한 조치는 "
+             "/issues 에 나온 명령을 Mac에서 직접 실행하세요 (예: 앱 확인 후 resolve, unlock).")
+
+
+def command_of(text):
+    text = (text or "").strip()
+    text = ALIASES.get(text, text)
+    parts = text.split()
+    return (parts[0].split("@")[0].lower() if parts else ""), parts
+
+
+def is_readonly(text):
+    command, _ = command_of(text)
+    return command in READONLY or (text or "").strip() in ACKS
+
+
 def handle(ctx, text):
     """Returns the reply. Database writes made here are committed by `poll`
     together with the processed update id; handlers must not commit."""
-    parts = text.strip().split()
-    command = parts[0].split("@")[0].lower() if parts else ""
+    command, parts = command_of(text)
+    if text.strip() in ACKS:
+        return ACK_REPLY
+    if READONLY.get(command) == "status":
+        from .ops import status_lines
+        return "\n".join(status_lines(ctx.db, ctx.now))
+    if READONLY.get(command) == "issues":
+        from .ops import issues_lines
+        return "\n".join(issues_lines(ctx.db, ctx.now, monitor_configured=bool(os.environ.get("MONITOR_URL"))))
     if command in ("/tax", "/세금"):
         return "\n".join(tax_report_lines(ctx.db, ctx.settings, ctx.now, ctx.extra_lines, ctx.estimate_fn, ctx.years))
     if command in ctx.handlers:
@@ -156,13 +186,17 @@ def fetch(journal, transport=None):
 
 
 def process(journal, updates, settings, now, transport=None, *, chat_id=None, extra_lines=None, handlers=None,
-            estimate_fn=None, years=None):
+            estimate_fn=None, years=None, readonly_only=False):
     """Apply each update at most once across every process sharing the DB.
 
     Per update, in one IMMEDIATE transaction: re-check it is unprocessed, run
     the handler's plan changes, record the update id (UNIQUE) and raise the
     offset to max(current, id) - an old receiver can never move it back. The
-    reply is sent after the commit; a failed reply never re-runs the change."""
+    reply is sent after the commit; a failed reply never re-runs the change.
+
+    readonly_only (used while another process holds the state lock): answer
+    the leading read-only messages and stop at the first command that could
+    change the plan, so it is left for the run and the offset never skips it."""
     chat_id = str(chat_id or os.environ.get("TELEGRAM_CHAT_ID", ""))
     transport = _transport(transport)
     journal.db.execute(SCHEMA)
@@ -177,6 +211,8 @@ def process(journal, updates, settings, now, transport=None, *, chat_id=None, ex
         sender = message.get("from") or {}
         allowed = bool(chat_id) and str(chat.get("id")) == chat_id and str(sender.get("id")) == chat_id \
             and chat.get("type") == "private"
+        if readonly_only and allowed and not (isinstance(message.get("text"), str) and is_readonly(message["text"])):
+            break
         reply = None
         try:
             with journal.atomic(immediate=True):
