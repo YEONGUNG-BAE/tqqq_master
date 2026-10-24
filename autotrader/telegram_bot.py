@@ -81,10 +81,11 @@ def tax_report_lines(db, settings, now, extra=None):
 HELP = ("명령\n/tax 세금 예상·준비 상황\n"
         "/tax_external 금액 YYYY-MM-DD  외부 납부 재원 예정\n"
         "/tax_secured 금액  외부 재원 실제 확보액\n"
-        "/tax_deposited 금액  외부 재원을 거래 계좌에 입금함\n"
+        "/tax_deposited 금액 YYYY-MM-DD  외부 재원 계좌 입금 예정(입출금 내역 확인 후 준비금)\n"
         "/tax_withdraw 금액 YYYY-MM-DD  세금용 출금 등록(내역과 대조)\n"
         "/tax_withdraw_cancel 요청번호  세금용 출금 취소·재입금\n"
-        "/tax_paid 금액  납부 완료\n/tax_paid_fix 총액  납부액 정정\n"
+        "/tax_paid 금액 [출금|외부|기타] [연도]  납부 완료(출처가 모호하면 지정 요청)\n"
+        "/tax_paid_fix 총액  납부액 정정\n"
         "/tax_release 확인  남은 준비금을 일반 현금으로\n"
         "/tax_cap 금액  연간 세금 매도 상한\n/tax_early on|off  미래 회차 조기 확보\n"
         "/help 이 안내\n주문·환전·잔고 조회 명령은 없습니다. 바뀐 계획은 다음 실행 주기에 반영됩니다.")
@@ -117,52 +118,95 @@ def parse_amount(text):
     return value if value.is_finite() and value >= 0 else None
 
 
-def poll(journal, settings, now, *, transport=None, chat_id=None, extra_lines=None, handlers=None):
-    """Process pending updates once. Returns the number of updates consumed."""
-    chat_id = str(chat_id or os.environ.get("TELEGRAM_CHAT_ID", ""))
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+SCHEMA = "CREATE TABLE IF NOT EXISTS tg_updates(update_id INTEGER PRIMARY KEY, processed_at TEXT NOT NULL)"
+
+
+def _transport(transport):
+    if transport is not None:
+        return transport
+    token, chat_id = os.environ.get("TELEGRAM_BOT_TOKEN", ""), os.environ.get("TELEGRAM_CHAT_ID", "")
+    return http_transport(token) if token and chat_id else None
+
+
+def _offset(db):
+    row = db.execute("SELECT value FROM metadata WHERE key='tg_last_update'").fetchone()
+    legacy = int(json.loads(row[0])) if row else 0
+    top = db.execute("SELECT MAX(update_id) FROM tg_updates").fetchone()[0] or 0
+    return max(legacy, top)
+
+
+def fetch(journal, transport=None):
+    """One short getUpdates call. No lock is held during the network wait; the
+    offset read here is only a hint - `process` re-checks inside its lock."""
+    transport = _transport(transport)
     if transport is None:
-        if not token or not chat_id:
-            return 0
-        transport = http_transport(token)
+        return []
+    journal.db.execute(SCHEMA)
+    journal.db.commit()
+    response = transport("getUpdates", {"offset": _offset(journal.db) + 1, "timeout": 0,
+                                        "allowed_updates": '["message"]'})
+    return sorted(response.get("result", []), key=lambda u: u.get("update_id", 0)) if response.get("ok") else []
+
+
+def process(journal, updates, settings, now, transport=None, *, chat_id=None, extra_lines=None, handlers=None):
+    """Apply each update at most once across every process sharing the DB.
+
+    Per update, in one IMMEDIATE transaction: re-check it is unprocessed, run
+    the handler's plan changes, record the update id (UNIQUE) and raise the
+    offset to max(current, id) - an old receiver can never move it back. The
+    reply is sent after the commit; a failed reply never re-runs the change."""
+    chat_id = str(chat_id or os.environ.get("TELEGRAM_CHAT_ID", ""))
+    transport = _transport(transport)
+    journal.db.execute(SCHEMA)
+    journal.db.commit()
     tax.ensure_schema(journal.db)
-    last = int(journal.meta("tg_last_update", 0) or 0)
-    response = transport("getUpdates", {"offset": last + 1, "timeout": 0, "allowed_updates": '["message"]'})
-    if not response.get("ok"):
-        return 0
-    consumed = 0
     ctx = Context(journal.db, settings, now, extra_lines, handlers)
-    for update in sorted(response.get("result", []), key=lambda u: u.get("update_id", 0)):
+    applied = 0
+    for update in updates:
         uid = int(update.get("update_id", 0))
-        if uid <= last:
-            continue
         message = update.get("message") or {}
         chat = message.get("chat") or {}
         sender = message.get("from") or {}
-        allowed = (chat_id and str(chat.get("id")) == chat_id and str(sender.get("id")) == chat_id
-                   and chat.get("type") == "private")
+        allowed = bool(chat_id) and str(chat.get("id")) == chat_id and str(sender.get("id")) == chat_id \
+            and chat.get("type") == "private"
         reply = None
-        db = journal.db
         try:
-            if allowed and isinstance(message.get("text"), str):
-                reply = handle(ctx, message["text"])
-            db.execute("INSERT OR REPLACE INTO metadata VALUES ('tg_last_update', ?)", (json.dumps(uid),))
-            db.commit()
+            with journal.atomic(immediate=True):
+                if uid <= _offset(journal.db) or journal.db.execute(
+                        "SELECT 1 FROM tg_updates WHERE update_id=?", (uid,)).fetchone():
+                    continue                                    # another receiver already took it
+                if allowed and isinstance(message.get("text"), str):
+                    reply = handle(ctx, message["text"])
+                journal.db.execute("INSERT INTO tg_updates VALUES (?,?)", (uid, now.isoformat()))
+                journal.db.execute("INSERT OR REPLACE INTO metadata VALUES ('tg_last_update', ?)",
+                                   (json.dumps(max(uid, _offset(journal.db))),))
         except Exception as exc:
-            db.rollback()
-            db.execute("INSERT OR REPLACE INTO metadata VALUES ('tg_last_update', ?)", (json.dumps(uid),))
-            db.commit()
+            # The handler's changes were rolled back; mark the update consumed so
+            # the same message is not retried forever, and say nothing changed.
+            with journal.atomic(immediate=True):
+                if not journal.db.execute("SELECT 1 FROM tg_updates WHERE update_id=?", (uid,)).fetchone():
+                    journal.db.execute("INSERT INTO tg_updates VALUES (?,?)", (uid, now.isoformat()))
+                    journal.db.execute("INSERT OR REPLACE INTO metadata VALUES ('tg_last_update', ?)",
+                                       (json.dumps(max(uid, _offset(journal.db))),))
             journal.event("telegram_command_failed", {"error_type": type(exc).__name__}, now)
             reply = "명령을 처리하지 못했습니다. 계획은 바뀌지 않았습니다." if allowed else None
-        last = uid
-        consumed += 1
-        if reply:
+        applied += 1
+        if reply and transport is not None:
             try:
                 transport("sendMessage", {"chat_id": chat_id, "text": remove_secrets(reply, secret_values())[:3500],
                                           "disable_web_page_preview": "true"})
             except Exception as exc:
                 journal.event("telegram_reply_failed", {"error_type": type(exc).__name__}, now)
-    return consumed
+    return applied
+
+
+def poll(journal, settings, now, *, transport=None, chat_id=None, extra_lines=None, handlers=None):
+    """fetch + process (used inside `run`, which already holds the state lock)."""
+    transport = _transport(transport)
+    if transport is None:
+        return 0
+    return process(journal, fetch(journal, transport), settings, now, transport, chat_id=chat_id,
+                   extra_lines=extra_lines, handlers=handlers)
 
 
 # ---- tax plan commands (stage 3) ----
@@ -210,6 +254,12 @@ def plan_handlers(plan):
     def year_of(ctx):
         return plan_year(plan, ctx.now)
 
+    def take_year(args, ctx):
+        """An explicit 4-digit tax year anywhere in the arguments wins."""
+        years = [a for a in args if a.isdigit() and len(a) == 4 and 2000 <= int(a) <= 2100]
+        rest = [a for a in args if a not in years]
+        return rest, (int(years[0]) if years else year_of(ctx))
+
     def ack(ctx, what, year):
         st = plan.status(year, ctx.now)
         return "\n".join([f"접수했습니다: {what} ({year}년 귀속)"] + render_amounts(
@@ -234,11 +284,15 @@ def plan_handlers(plan):
         return ack(ctx, "외부 재원 확보액", year_of(ctx))
 
     def deposited(ctx, args):
-        amount = parse_amount(args[0]) if args else None
-        if amount is None:
+        rest, year = take_year(args, ctx)
+        amount, day = (parse_amount(rest[0]) if rest else None), (_date(rest[1]) if len(rest) > 1 else None)
+        if amount is None or day is None:
             return usage("/tax_deposited")
-        plan.external_deposited(year_of(ctx), amount, ctx.now)
-        return ack(ctx, "외부 재원 계좌 입금(준비금으로 이동)", year_of(ctx))
+        try:
+            rid = plan.expect_external_deposit(year, amount, day, ctx.now)
+        except ValueError:
+            return "먼저 /tax_secured 로 외부 확보액을 입력하세요. 확보액보다 큰 입금은 등록하지 않습니다."
+        return ack(ctx, f"외부 재원 입금 예정 등록(요청번호 {rid}). 입출금 내역에서 확인되면 준비금으로 옮깁니다", year)
 
     def withdraw(ctx, args):
         amount, day = (parse_amount(args[0]) if args else None), (_date(args[1]) if len(args) > 1 else None)
@@ -254,11 +308,20 @@ def plan_handlers(plan):
         return ack(ctx, "세금용 출금 취소·재입금", year_of(ctx))
 
     def paid(ctx, args):
-        amount = parse_amount(args[0]) if args else None
+        rest, year = take_year(args, ctx)
+        sources = {"출금": "withdrawn", "외부": "external", "기타": "other"}
+        source = next((sources[a] for a in rest if a in sources), None)
+        rest = [a for a in rest if a not in sources]
+        amount = parse_amount(rest[0]) if rest else None
         if amount is None:
             return usage("/tax_paid")
-        plan.record_payment(year_of(ctx), amount, ctx.now)
-        return ack(ctx, "납부 완료", year_of(ctx)) + "\n남은 준비금은 /tax_release 확인 으로만 일반 현금으로 돌립니다."
+        try:
+            used = plan.record_payment(year, amount, ctx.now, source=source)
+        except ValueError:
+            return ("납부 출처가 모호하거나 금액이 출처 잔액보다 큽니다. 출처를 붙여 다시 보내세요: "
+                    "/tax_paid 금액 출금|외부|기타 [연도]")
+        label = {"withdrawn": "세금용 출금분", "external": "외부 확보분", "other": "기타 자금"}[used]
+        return ack(ctx, f"납부 완료({label}에서)", year) + "\n남은 준비금은 /tax_release 확인 으로만 일반 현금으로 돌립니다."
 
     def paid_fix(ctx, args):
         amount = parse_amount(args[0]) if args else None

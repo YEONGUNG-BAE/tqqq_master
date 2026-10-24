@@ -46,6 +46,11 @@ CREATE TABLE IF NOT EXISTS tax_caps(
 CREATE TABLE IF NOT EXISTS tax_withdrawals(
   request_id TEXT PRIMARY KEY, year INTEGER NOT NULL, amount_krw TEXT NOT NULL, requested_date TEXT NOT NULL,
   status TEXT NOT NULL, matched_ref TEXT UNIQUE, created TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS tax_external_deposits(
+  request_id TEXT PRIMARY KEY, year INTEGER NOT NULL, amount_krw TEXT NOT NULL, expected_date TEXT NOT NULL,
+  status TEXT NOT NULL, matched_ref TEXT UNIQUE, created TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS tax_issues(
+  issue_key TEXT PRIMARY KEY, kind TEXT NOT NULL, detail TEXT NOT NULL, at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS tax_moves(
   seq INTEGER PRIMARY KEY AUTOINCREMENT, year INTEGER NOT NULL, at TEXT NOT NULL, from_state TEXT NOT NULL,
   to_state TEXT NOT NULL, amount TEXT NOT NULL, currency TEXT NOT NULL, ref TEXT);
@@ -55,6 +60,22 @@ COLUMNS = {"reserve_krw", "reserve_usd", "withdrawn_krw", "paid_krw", "sold_for_
 
 def ensure_schema(db):
     db.executescript(SCHEMA)
+    have = {r[1] for r in db.execute("PRAGMA table_info(tax_external_funds)")}
+    if "deposited_krw" not in have:
+        # Additive migration. Money an older version moved from external funds
+        # into the account is known from its audit rows; payments it recorded as
+        # 'outside' cannot be split between external funds and other money, so
+        # they are flagged for the user instead of being guessed.
+        db.execute("ALTER TABLE tax_external_funds ADD COLUMN deposited_krw TEXT NOT NULL DEFAULT '0'")
+        db.execute("ALTER TABLE tax_external_funds ADD COLUMN paid_ext_krw TEXT NOT NULL DEFAULT '0'")
+        for year, amount in db.execute("SELECT year, SUM(CAST(amount AS REAL)) FROM tax_moves WHERE "
+                                       "from_state='external_secured' AND to_state='reserve_krw' GROUP BY year").fetchall():
+            db.execute("UPDATE tax_external_funds SET deposited_krw=? WHERE year=?", (str(D(str(amount))), year))
+        for (year,) in db.execute("SELECT DISTINCT year FROM tax_moves WHERE from_state='outside' AND to_state='paid_krw'"):
+            db.execute("INSERT OR IGNORE INTO tax_issues VALUES (?,?,?,?)",
+                       (f"payment_source:{year}", "payment_source_unknown",
+                        f"{year}: payments recorded by an older version may have come from external funds; "
+                        "re-enter them with /tax_paid_fix and a source", datetime.now().isoformat()))
     db.commit()
 
 
@@ -125,40 +146,95 @@ class TaxPlan:
 
     # ---- external funds ----
 
+    def _ext(self, year):
+        row = self.db.execute("SELECT planned_krw, planned_date, secured_krw, deposited_krw, paid_ext_krw "
+                              "FROM tax_external_funds WHERE year=?", (int(year),)).fetchone()
+        if not row:
+            return None
+        return {"planned": D(row[0]), "date": row[1], "secured": D(row[2]), "deposited": D(row[3]),
+                "paid_ext": D(row[4])}
+
     def set_external(self, year, planned_krw, planned_date, now):
-        self.db.execute("INSERT INTO tax_external_funds(year, planned_krw, planned_date, secured_krw, updated) "
-                        "VALUES (?,?,?,COALESCE((SELECT secured_krw FROM tax_external_funds WHERE year=?),'0'),?) "
-                        "ON CONFLICT(year) DO UPDATE SET planned_krw=excluded.planned_krw, "
-                        "planned_date=excluded.planned_date, updated=excluded.updated",
-                        (int(year), str(D(planned_krw)), planned_date, int(year), now.isoformat()))
+        """planned_krw is the TOTAL external contribution planned for the year.
+        Money already moved into the account or paid from it stays counted in
+        deposited/paid_ext, so changing the plan never resurrects it."""
+        if self._ext(year) is None:
+            self.db.execute("INSERT INTO tax_external_funds(year, planned_krw, planned_date, secured_krw, updated, "
+                            "deposited_krw, paid_ext_krw) VALUES (?,?,?,?,?,?,?)",
+                            (int(year), str(D(planned_krw)), planned_date, "0", now.isoformat(), "0", "0"))
+        else:
+            self.db.execute("UPDATE tax_external_funds SET planned_krw=?, planned_date=?, updated=? WHERE year=?",
+                            (str(D(planned_krw)), planned_date, now.isoformat(), int(year)))
 
     def set_external_secured(self, year, secured_krw, now):
-        if not self.db.execute("SELECT 1 FROM tax_external_funds WHERE year=?", (int(year),)).fetchone():
+        """secured_krw: external money secured and still unused outside the account."""
+        ext = self._ext(year)
+        if ext is None:
             self.set_external(year, secured_krw, now.astimezone(_KST()).date().isoformat(), now)
-        self.db.execute("UPDATE tax_external_funds SET secured_krw=?, updated=? WHERE year=?",
-                        (str(D(secured_krw)), now.isoformat(), int(year)))
+            ext = self._ext(year)
+        self.db.execute("UPDATE tax_external_funds SET secured_krw=?, planned_krw=?, updated=? WHERE year=?",
+                        (str(D(secured_krw)), str(max(ext["planned"], D(secured_krw) + ext["deposited"] + ext["paid_ext"])),
+                         now.isoformat(), int(year)))
 
-    def external_deposited(self, year, amount, now):
-        """External money moved INTO the trading account: it leaves the external
-        state and becomes KRW reserve, so it is never counted twice."""
-        row = self.db.execute("SELECT secured_krw FROM tax_external_funds WHERE year=?", (int(year),)).fetchone()
-        secured = D(row[0]) if row else D(0)
-        amount = min(D(amount), secured)
-        self.db.execute("UPDATE tax_external_funds SET secured_krw=?, updated=? WHERE year=?",
-                        (str(secured - amount), now.isoformat(), int(year)))
-        return self._move(year, now, "external_secured", "reserve_krw", amount, "KRW", "external deposit")
+    def expect_external_deposit(self, year, amount, expected_date, now):
+        """The user moves secured external money into the trading account. It
+        becomes KRW reserve only when the cash ledger shows the deposit; until
+        then the amount is held back from FX and automatic allocation."""
+        ext = self._ext(year)
+        if ext is None or ext["secured"] < D(amount):
+            raise ValueError("external money must be secured (/tax_secured) before it is deposited")
+        rid = str(uuid4())[:8]
+        self.db.execute("INSERT INTO tax_external_deposits VALUES (?,?,?,?,?,NULL,?)",
+                        (rid, int(year), str(D(amount)), expected_date, "expected", now.isoformat()))
+        return rid
+
+    def _pending_deposits(self, now):
+        today = now.astimezone(_KST()).date()
+        rows = self.db.execute("SELECT request_id, year, amount_krw, expected_date FROM tax_external_deposits "
+                               "WHERE status='expected'").fetchall()
+        return [r for r in rows if today <= date.fromisoformat(r[3]) + timedelta(days=7)]
+
+    def match_deposits(self, ledger_rows, now):
+        """Link a cash-ledger deposit to an expected external deposit: same amount,
+        from one day before to seven days after the expected date, exactly one
+        unused ledger row. Moves secured -> KRW reserve once, atomically."""
+        unique = {}
+        for r in ledger_rows:
+            if str(r.get("tr_type_code")) == "01" and str(r.get("cncl_yn", "N")) != "Y":
+                unique.setdefault(str(r.get("tran_srno")), r)
+        used = {r[0] for r in self.db.execute("SELECT matched_ref FROM tax_external_deposits WHERE matched_ref IS NOT NULL")}
+        moved = []
+        for rid, year, amount, expected in self._pending_deposits(now):
+            start = date.fromisoformat(expected)
+            fits = [w for w in unique.values() if str(w.get("tran_srno")) not in used
+                    and D(str(w.get("tr_amt", "0")).replace(",", "")) == D(amount)
+                    and start - timedelta(days=1) <= _ymd(w.get("tr_date")) <= start + timedelta(days=7)]
+            if len(fits) != 1:
+                continue
+            ref = str(fits[0].get("tran_srno"))
+            ext = self._ext(year)
+            take = min(D(amount), ext["secured"])
+            self.db.execute("UPDATE tax_external_funds SET secured_krw=?, deposited_krw=?, updated=? WHERE year=?",
+                            (str(ext["secured"] - take), str(ext["deposited"] + take), now.isoformat(), year))
+            self._move(year, now, "external_secured", "reserve_krw", take, "KRW", ref)
+            self.db.execute("UPDATE tax_external_deposits SET status='matched', matched_ref=? WHERE request_id=?", (ref, rid))
+            used.add(ref)
+            moved.append(rid)
+        return moved
 
     def external_valid(self, year, now):
-        """Secured external money always counts. Planned money counts until its
-        date passes; after that only what was confirmed secured."""
-        row = self.db.execute("SELECT planned_krw, planned_date, secured_krw FROM tax_external_funds WHERE year=?",
-                              (int(year),)).fetchone()
-        if not row:
-            return {"planned": D(0), "secured": D(0), "valid": D(0), "overdue": False, "date": None}
-        planned, secured = D(row[0]), D(row[2])
-        overdue = now.astimezone(_KST()).date() > date.fromisoformat(row[1]) and secured < planned
-        valid = secured if overdue else max(planned, secured)
-        return {"planned": planned, "secured": secured, "valid": valid, "overdue": overdue, "date": row[1]}
+        """Usable external money still outside the account. Before the planned
+        date: the larger of the plan's unused remainder and what is secured;
+        after it: only what is secured."""
+        ext = self._ext(year)
+        if not ext:
+            return {"planned": D(0), "secured": D(0), "valid": D(0), "overdue": False, "date": None,
+                    "deposited": D(0), "paid_ext": D(0)}
+        remaining = max(D(0), ext["planned"] - ext["deposited"] - ext["paid_ext"])
+        overdue = now.astimezone(_KST()).date() > date.fromisoformat(ext["date"]) and ext["secured"] < remaining
+        valid = ext["secured"] if overdue else max(remaining, ext["secured"])
+        return {"planned": ext["planned"], "secured": ext["secured"], "valid": valid, "overdue": overdue,
+                "date": ext["date"], "deposited": ext["deposited"], "paid_ext": ext["paid_ext"]}
 
     # ---- caps ----
 
@@ -221,9 +297,11 @@ class TaxPlan:
     # ---- securing money ----
 
     def reserved(self, now):
-        """KRW and USD the engine must neither convert nor invest."""
+        """KRW and USD the engine must neither convert nor invest, including
+        expected external deposits not yet confirmed in the cash ledger."""
         rows = list(self.db.execute("SELECT reserve_krw, reserve_usd FROM tax_state WHERE released=0"))
-        return sum((D(r[0]) for r in rows), D(0)), sum((D(r[1]) for r in rows), D(0))
+        hold = sum((D(r[2]) for r in self._pending_deposits(now)), D(0))
+        return sum((D(r[0]) for r in rows), D(0)) + hold, sum((D(r[1]) for r in rows), D(0))
 
     def allocate_cash(self, year, free_krw, free_usd, now):
         """Earmark existing unreserved cash for the current installment gap: KRW
@@ -392,13 +470,38 @@ class TaxPlan:
         self.db.execute("UPDATE tax_withdrawals SET status='cancelled' WHERE request_id=?", (request_id,))
         return True
 
-    def record_payment(self, year, amount, now):
-        """Payment confirmed by the user: first from money withdrawn for tax, the
-        rest from outside the account. Never deducted twice."""
+    def record_payment(self, year, amount, now, source=None):
+        """Payment confirmed by the user, from exactly one named source:
+        'withdrawn' (money withdrawn for tax), 'external' (secured external
+        money) or 'other' (money outside the plan). Without a source it is
+        inferred only when exactly one source can cover it; otherwise the user
+        is asked. No state may go negative."""
         amount = D(amount)
-        from_withdrawn = min(amount, self._row(year)["withdrawn_krw"])
-        self._move(year, now, "withdrawn_krw", "paid_krw", from_withdrawn, "KRW", "payment")
-        self._move(year, now, "outside", "paid_krw", amount - from_withdrawn, "KRW", "payment (outside funds)")
+        if amount <= 0:
+            raise ValueError("payment must be positive")
+        row = self._row(year)
+        ext = self._ext(year) or {"secured": D(0), "paid_ext": D(0)}
+        if source is None:
+            fits = [name for name, room in (("withdrawn", row["withdrawn_krw"]), ("external", ext["secured"]))
+                    if room >= amount]
+            if len(fits) != 1:
+                raise ValueError("payment source is ambiguous or uncovered; name it (출금, 외부 or 기타)")
+            source = fits[0]
+        if source == "withdrawn":
+            if row["withdrawn_krw"] < amount:
+                raise ValueError("more than the money withdrawn for tax")
+            self._move(year, now, "withdrawn_krw", "paid_krw", amount, "KRW", "payment")
+        elif source == "external":
+            if ext["secured"] < amount:
+                raise ValueError("more than the secured external money")
+            self.db.execute("UPDATE tax_external_funds SET secured_krw=?, paid_ext_krw=?, updated=? WHERE year=?",
+                            (str(ext["secured"] - amount), str(ext["paid_ext"] + amount), now.isoformat(), int(year)))
+            self._move(year, now, "external_secured", "paid_krw", amount, "KRW", "payment (external)")
+        elif source == "other":
+            self._move(year, now, "outside", "paid_krw", amount, "KRW", "payment (other money)")
+        else:
+            raise ValueError("unknown payment source")
+        return source
 
     def correct_payment(self, year, new_total, now):
         """Correct the paid total. The difference goes to/from 'correction'; the

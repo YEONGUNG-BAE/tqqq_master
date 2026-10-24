@@ -224,6 +224,7 @@ def housekeeping(journal, notifier, cfg, broker, schedule, now):
 
                 def ledger(rows):
                     unlinked.extend(plan.match_withdrawals(rows, now)[1])
+                    plan.match_deposits(rows, now)
                 result = tax.sync(journal.db, broker, [s[0] for s in schedule.sessions], now,
                                   str(tax_cfg.get("ledger_start", "00000000")), on_ledger=ledger)
                 for year in {now.astimezone(KST).year, now.astimezone(KST).year - 1}:
@@ -566,11 +567,20 @@ def telegram_command(args):
     journal = Journal(state / "journal.sqlite")
     try:
         now = datetime.now(timezone.utc)
-        settings, plan, _ = make_plan(journal, cfg, now)
-        lines, line_now = telegram_bot.plan_lines(plan)
-        line_now[0] = now
-        output({"processed": telegram_bot.poll(journal, settings, now, extra_lines=lines,
-                                               handlers=telegram_bot.plan_handlers(plan))})
+        updates = telegram_bot.fetch(journal)              # network wait: no lock held
+        with open(state / "run.lock", "a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                # A run holds the state lock (and reads/moves reserves); it will
+                # process these commands itself. Nothing is confirmed here.
+                output({"processed": 0, "deferred_to_run": len(updates)})
+                return 0
+            settings, plan, _ = make_plan(journal, cfg, now)
+            lines, line_now = telegram_bot.plan_lines(plan)
+            line_now[0] = now
+            output({"processed": telegram_bot.process(journal, updates, settings, now, extra_lines=lines,
+                                                      handlers=telegram_bot.plan_handlers(plan))})
     finally:
         journal.db.close()
     return 0

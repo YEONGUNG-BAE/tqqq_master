@@ -301,10 +301,16 @@ class Journal:
             raise JournalError("State database unreadable: " + type(exc).__name__) from exc
 
     @contextmanager
-    def atomic(self):
+    def atomic(self, immediate=False):
         """One transaction for several writes. Inside it no helper commits; the
         whole block commits at the end or rolls back on any exception, so a kill
-        between two related writes can never leave only one of them on disk."""
+        between two related writes can never leave only one of them on disk.
+        immediate=True takes SQLite's write lock up front (BEGIN IMMEDIATE), so a
+        check-then-write by another connection cannot interleave."""
+        if immediate and self._depth == 0:
+            if self.db.in_transaction:
+                self.db.commit()
+            self.db.execute("BEGIN IMMEDIATE")
         self._depth += 1
         try:
             yield

@@ -302,7 +302,7 @@ class WithdrawalTests(ReserveBase):
         self.assertGreaterEqual(moves, 5)                          # every move audited
 
     def test_release_only_by_explicit_user_command(self):
-        self.plan.record_payment(2026, TAX, JAN)
+        self.plan.record_payment(2026, TAX, JAN, source="other")
         self.assertGreater(self.st()["reserve_krw"], 0)            # paid, but reserve still held
         self.plan.release(2026, JAN)
         self.assertEqual(self.st()["reserve_krw"], 0)
@@ -337,7 +337,7 @@ class TelegramPlanCommandTests(ReserveBase):
     def test_plan_commands_apply_once_even_if_redelivered(self):
         self.say(1, "/tax_external 600,000 2027-03-31")
         self.say(2, "/tax_secured 250000")
-        self.say(3, "/tax_paid 50000")
+        self.say(3, "/tax_paid 50000 기타")
         self.poll()
         self.poll()                                                # same updates offered again
         restarted = Journal(self.path)
