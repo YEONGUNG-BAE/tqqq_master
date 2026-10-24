@@ -118,7 +118,8 @@ def default_channels():
 
 def secret_values():
     return [os.environ.get(k, "") for k in ("MERITZ_CLIENT_ID", "MERITZ_CLIENT_SECRET", "MERITZ_MAC_ADDRESS",
-                                            "ALERT_SMTP_PASSWORD", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID")]
+                                            "ALERT_SMTP_PASSWORD", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
+                                            "MONITOR_SECRET")]
 
 
 class Notifier:

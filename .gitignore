@@ -26,6 +26,7 @@ token.lock
 config.json
 config*.json
 !config.example.json
+monitor.json
 .claude/settings.local.json
 
 # --- 계좌 상태·실거래 기록·DB ---

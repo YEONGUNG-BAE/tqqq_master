@@ -12,7 +12,7 @@ from .core import (D, SUBMITTING, UNKNOWN, Engine, Journal, JournalError, Settin
 from .history import refresh
 from .meritz import AuthError, Client, Meritz
 from .notify import Notifier, default_channels, scrub, secret_values
-from . import tax, telegram_bot
+from . import heartbeat, tax, telegram_bot
 from .tax_reserve import TaxPlan
 from .paper import Paper
 from .schedule import KST, Schedule, confirm_regular_session
@@ -22,7 +22,7 @@ JOURNAL_UNUSABLE = "journal_unusable.json"
 AUTH_LOCK_COUNT = 3      # explicit token refusals in a row -> hard lock (revoked key/permission)
 ENV_KEYS = {"MERITZ_CLIENT_ID", "MERITZ_CLIENT_SECRET", "MERITZ_MAC_ADDRESS",
             "ALERT_SMTP_HOST", "ALERT_SMTP_PORT", "ALERT_SMTP_USER", "ALERT_SMTP_PASSWORD",
-            "ALERT_FROM", "ALERT_TO", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"}
+            "ALERT_FROM", "ALERT_TO", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "MONITOR_URL", "MONITOR_SECRET"}
 
 
 def output(value):
@@ -278,6 +278,7 @@ def run_locked(cfg, state, settings):
     notifier = Notifier(journal, enabled=cfg.get("notifications", True))
     notifier.retry_pending(now)   # failed one-time messages are not lost if the event never repeats
     broker = schedule = None
+    outcome = "error"
     try:
         client = Client(state, allow_mutations=settings.mode == "live")
         broker = Meritz(client, journal)
@@ -339,6 +340,7 @@ def run_locked(cfg, state, settings):
         journal.put_meta("health", {"at": now.isoformat(), "result": result,
                                    "target": signal["target"], "mode": settings.mode})
         after_success(journal, notifier, result, signal, session_key, now)
+        outcome = "ok"
         previous = journal.meta("last_result")
         if result != previous:
             journal.event("result", {"message": result}, now)
@@ -358,6 +360,7 @@ def run_locked(cfg, state, settings):
                              required="Check the app key/secret and API permission in the Meritz portal, then `unlock`")
             journal.event("error", {"message": message}, now)
             locked = journal.meta("halt")
+            outcome = "lock" if locked else ("hold" if isinstance(exc, Stop) else "error")
             if locked:
                 info = journal.meta("lock_info") or {}
                 notifier.send("lock", info.get("code", "lock"), locked, now, required=info.get("required"))
@@ -373,6 +376,9 @@ def run_locked(cfg, state, settings):
         return 1
     finally:
         housekeeping(journal, notifier, cfg, broker, schedule, now)
+        # Last, after trading and housekeeping: a monitor outage cannot delay anything.
+        heartbeat.publish(journal, now=datetime.now(timezone.utc), run_at=now, outcome=outcome,
+                          work_done=outcome == "ok")
         journal.db.close()
 
 
@@ -400,7 +406,8 @@ def doctor(args):
         finally:
             journal.db.close()
     secrets = [os.environ.get(k, "") for k in CREDENTIAL_KEYS + ("MERITZ_MAC_ADDRESS", "ALERT_SMTP_PASSWORD",
-                                                                  "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID")]
+                                                                  "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
+                                                                  "MONITOR_SECRET")]
     try:
         secrets.append(json.loads((state / "token.json").read_text()).get("token", ""))
     except (OSError, ValueError, AttributeError):
@@ -453,6 +460,7 @@ def local_status(args):
     output({"health": journal.meta("health"), "signal": journal.meta("signal"),
             "halt": journal.meta("halt"), "lock": journal.meta("lock_info"), "hold": journal.meta("active_hold"),
             "failures": journal.meta("failures"), "auth_failures": journal.meta("auth_failures"),
+            "monitor": {"instance": heartbeat.instance_id(journal), "last_send": journal.meta("monitor_last_send")},
             "pending": [{k: r[k] for k in ("id", "kind", "status", "created", "session", "filled", "attempt")}
                         for r in journal.pending()]})
     return 0

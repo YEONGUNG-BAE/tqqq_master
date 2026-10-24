@@ -1,0 +1,13 @@
+{
+  "store": "monitor.sqlite",
+  "host": "0.0.0.0",
+  "port": 8787,
+  "instances": ["inst-replace-with-the-id-from-status"],
+  "heartbeat_timeout_seconds": 300,
+  "work_freshness_seconds": 900,
+  "signal_grace_minutes": 120,
+  "switch_grace_minutes": 15,
+  "recovery_buffer_minutes": 10,
+  "max_clock_skew_seconds": 300,
+  "alert_repeat_hours": 6
+}

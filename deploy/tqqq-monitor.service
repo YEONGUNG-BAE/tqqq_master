@@ -1,0 +1,29 @@
+# Example systemd unit for the EXTERNAL monitor host (not the trading Mac).
+# The monitor needs this repository (no secrets.env, no config.json, no broker
+# keys) and Python with the packages in requirements.txt.
+#
+#   sudo cp deploy/tqqq-monitor.service /etc/systemd/system/
+#   sudo install -m 600 /dev/null /etc/tqqq-monitor.env    # then edit it
+#   sudo systemctl enable --now tqqq-monitor
+#
+# /etc/tqqq-monitor.env (mode 600):
+#   MONITOR_SECRET=<same 32+ character value as MONITOR_SECRET on the Mac>
+#   MONITOR_TELEGRAM_BOT_TOKEN=<a bot token for alerts>
+#   MONITOR_TELEGRAM_CHAT_ID=<your chat id>
+#   MONITOR_BACKUP_WEBHOOK=<optional second channel, e.g. a webhook URL>
+[Unit]
+Description=TQQQ automation external monitor (no broker access)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/tqqq_master
+EnvironmentFile=/etc/tqqq-monitor.env
+ExecStart=/opt/tqqq_master/.venv/bin/python -m autotrader.monitor serve --config /opt/tqqq_master/monitor.json
+Restart=always
+RestartSec=10
+User=tqqq-monitor
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
