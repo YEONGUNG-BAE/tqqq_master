@@ -26,11 +26,11 @@ from urllib.request import Request, urlopen
 # Repeat window per category: same (category, code) is not sent again inside it.
 WINDOWS = {"hold": timedelta(hours=6), "lock": timedelta(hours=6), "carryover": timedelta(days=7),
            "recovered": timedelta(minutes=30), "done": timedelta(hours=12), "ok": timedelta(hours=20),
-           "tax": timedelta(days=400)}
+           "tax": timedelta(days=400), "check": timedelta(hours=12)}
 RETRY_AFTER_FAILURE = timedelta(minutes=30)
 RETRY_GIVE_UP = timedelta(hours=24)     # a failed message is retried for at most a day
 TITLES = {"ok": "정상", "done": "완료", "hold": "보류", "recovered": "복구", "lock": "잠금", "carryover": "이월",
-          "tax": "세금"}
+          "tax": "세금", "check": "실계좌 검증"}
 # The only amounts a message may carry. Values must be numbers; labels are fixed.
 TAX_FIELDS = {"estimated_tax": "예상 세액", "account_net": "이 계좌 순손익", "external_net": "다른 증권사 입력 손익",
               "taxable": "과세표준", "deduction": "기본공제", "paid": "납부 완료", "reserve_krw": "계좌 원화 준비금",

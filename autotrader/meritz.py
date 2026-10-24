@@ -74,6 +74,7 @@ class Client:
         self.key_fingerprint = hashlib.sha256(self.key.encode()).hexdigest()
         self._next_call = 0.0
         self.on_send = None          # engine's send-start checkpoint, set per request
+        self.mutation_filter = None  # optional transport-level allowlist for POSTs
         self.sleep = time.sleep      # injectable for tests: no real waiting
         self.rng = random.Random()
         self.token_issued = False
@@ -176,6 +177,8 @@ class Client:
     def call(self, method, path, *, query=None, body=None, success=("0000", "5766", "5820"), allow_paginated=False):
         if method != "GET" and not self.allow_mutations:
             raise Stop("Observe mode prohibits trading/FX/cancellation calls")
+        if method != "GET" and self.mutation_filter is not None:
+            self.mutation_filter(path, body or {})   # e.g. live check: only its plan's orders and cancels
         if method == "GET":
             response = self._read(path, query)
         else:

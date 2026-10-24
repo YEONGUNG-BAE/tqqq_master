@@ -430,7 +430,7 @@ def missing_switch_effects(journal):
     if not intent or intent.get("status") == "superseded":
         return []
     return [r for r in journal.with_status(DONE) if r["kind"] == "order" and r["id"] not in intent["counted"]
-            and _belongs(intent, r, json.loads(r["payload"]))]
+            and not json.loads(r["payload"]).get("owner") and _belongs(intent, r, json.loads(r["payload"]))]
 
 
 def missing_tax_effects(journal):
@@ -489,6 +489,14 @@ class Engine:
         self.tax_unavailable = None
         self.reverse_fx_verified = False
         self.last_action_id = None
+        # Live check (livecheck.py): requests owned by one approved plan. The
+        # general engine has owner None and never touches owned rows; a check
+        # engine touches only its own. `live_check` is the plan's authorization,
+        # enforced before the intent is stored and again right before the send.
+        self.owner = None
+        self.live_check = None
+        self.strict_reservations = False      # incomplete reservation coverage blocks (live does too)
+        self.cancel_open = False              # stop request: cancel own open orders now
 
     def _current(self, now):
         """Time for freshness and window checks made after slow reads. Never earlier
@@ -538,8 +546,13 @@ class Engine:
 
     # ---- sending ----
 
+    def _owns(self, row):
+        return json.loads(row["payload"] or "{}").get("owner") == self.owner
+
     def _submit(self, kind, payload, now, session, call, guard=None, prepared=None, abandoned=None):
-        if self.cfg.mode == "observe":
+        if self.live_check is not None:
+            self.live_check.permit(kind, payload)          # outside the approved plan: Stop, nothing stored
+        elif self.cfg.mode == "observe":
             self.j.event("plan", dict(kind=kind, **payload), now)
             return "observe: " + kind
         if self.j.meta("halt"):
@@ -564,6 +577,11 @@ class Engine:
         def mark_sending():
             # Runs after token issue and call pacing, immediately before the HTTP
             # write: the last chance to drop a request whose window just closed.
+            if self.live_check is not None:
+                try:
+                    self.live_check.permit(kind, payload)
+                except Stop as exc:
+                    raise Aborted("outside the live-check plan at send time: " + str(exc)) from exc
             if guard is not None:
                 guard()
             # Durable send-start immediately before the transport writes the request.
@@ -675,7 +693,11 @@ class Engine:
 
     def _order_effects(self, action_id, payload, filled, state, now):
         """Derived bookkeeping of a terminal order. Called inside the same
-        transaction as the DONE status, and idempotent (keyed by action id)."""
+        transaction as the DONE status, and idempotent (keyed by action id).
+        Live-check orders feed no switch or tax book: their ledger is derived
+        from their own journal rows (livecheck.py)."""
+        if payload.get("owner"):
+            return
         self._switch_fill({"id": action_id}, payload, filled, state, now)
         if payload.get("tax_year") and self.tax_plan is not None:
             # Conservative: a sell fills at or above its limit; fee buffer deducted.
@@ -757,6 +779,10 @@ class Engine:
         for row in self.j.with_status(PREPARED):
             if row["run_id"] == self.run_id:
                 continue
+            if not self._owns(row):
+                if self.owner is not None:
+                    raise Stop("A request of the general engine is being prepared; live check waits")
+                continue
             if (now - datetime.fromisoformat(row["created"])).total_seconds() < PREPARED_STALE_SECONDS:
                 raise Stop("Another process may be about to send a request; waiting")
             # An earlier process stopped before its send-start record: never sent.
@@ -767,7 +793,9 @@ class Engine:
                         self.tax_plan.cancel_progress(row["id"], now, reason="send never started")
         self._replay_effects(now)
         self._release_orphans(now)
-        pending = self.j.pending()
+        pending = [r for r in self.j.pending() if self._owns(r)]
+        if self.owner is not None and len(pending) != len(self.j.pending()):
+            raise Stop("A request of the general engine is unresolved; live check sends nothing")
         pending.sort(key=lambda r: 0 if r["kind"] == "cancel" else 1)
         for row in pending:
             if row["status"] in (SUBMITTING, UNKNOWN):
@@ -865,6 +893,7 @@ class Engine:
             conflicting = target is not None and recorded_target is not None and (
                 logical_target(recorded_target, payload.get("strategy")) != target
                 or (payload.get("side") == "buy" and payload.get("symbol") != target))
+            conflicting = conflicting or (self.cancel_open and self.owner is not None)
             if conflicting or elapsed >= self.cfg.order_timeout_seconds:
                 if not may_cancel:
                     return "waiting: market permits cancellation"
@@ -873,6 +902,9 @@ class Engine:
                     return "waiting: terminal order state"
                 cancel_payload = {"original": receipt, "qty": str(remaining),
                                   "reason": "target changed" if conflicting else "timeout"}
+                if payload.get("owner"):
+                    cancel_payload.update(owner=payload["owner"], reason="stop requested" if self.cancel_open
+                                          else cancel_payload["reason"])
                 result = self._submit("cancel", cancel_payload, now, row["session"],
                                       lambda: self.broker.cancel(receipt, remaining))
                 if result == "submitted: cancel":
@@ -902,7 +934,7 @@ class Engine:
                        "cancel or let them finish in the broker app. The engine never cancels reservations")
         if not lookup.complete:
             reason = "reservation coverage unverified: " + (lookup.reason or "unknown")
-            if self.cfg.mode == "live":
+            if self.cfg.mode == "live" or self.strict_reservations:
                 raise Stop("New orders blocked: " + reason)
             self.j.event("unverified", {"check": "reservations", "reason": reason,
                                         "searched_from": lookup.searched_from}, now)
@@ -995,6 +1027,8 @@ class Engine:
         return intent
 
     def _switch_fill(self, row, payload, filled, state, now):
+        if payload.get("owner"):
+            return                                    # a live-check order is never switch money
         intent = self.j.meta("switch_intent")
         if not intent or intent["status"] in ("done", "superseded") or row["id"] in intent["counted"]:
             return

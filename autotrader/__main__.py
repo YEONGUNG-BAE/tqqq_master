@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from .history import recompute, refresh
 from .signal import STRATEGY_VERSION
 from .meritz import AuthError, Client, Meritz
 from .notify import Notifier, default_channels, scrub, secret_values
-from . import books, heartbeat, tax, telegram_bot
+from . import books, heartbeat, livecheck, tax, telegram_bot
 from .tax_reserve import TaxPlan
 from .paper import Paper
 from .schedule import KST, Schedule, confirm_regular_session
@@ -79,6 +80,12 @@ def account_lock_path(cfg):
     key = os.environ.get("MERITZ_CLIENT_ID", "")
     name = hashlib.sha256(key.encode()).hexdigest()[:16] if key else "unconfigured"
     return folder / f"account-{name}.lock"
+
+
+def account_marker_path(cfg):
+    """Live-check marker next to the account lock: a run from ANY state folder
+    on this account sends nothing while it exists."""
+    return account_lock_path(cfg).with_suffix(".livecheck")
 
 
 def hold_code(message):
@@ -312,6 +319,11 @@ def run_locked(cfg, state, settings):
     broker = schedule = None
     outcome = "error"
     try:
+        check = livecheck.blocking(journal, account_marker_path(cfg))
+        if check:
+            # The live check owns this account until it is complete or stopped with
+            # no test shares left; the general engine sends nothing meanwhile.
+            raise Stop(f"Live check in progress ({check['source']}); the general run sends nothing until it ends")
         client = Client(state, allow_mutations=settings.mode == "live")
         broker = Meritz(client, journal, settings.instrument_markets)
         schedule = Schedule(now)
@@ -429,6 +441,141 @@ def run_locked(cfg, state, settings):
         journal.db.close()
 
 
+LIVE_CHECK_POLL_SECONDS = 5
+LIVE_CHECK_MAX_MINUTES = 16          # one open window (minutes 1-15) plus settling
+LIVE_CHECK_MAX_TICKS = 400           # hard bound on one invocation's loop
+
+
+def live_check_sleep(seconds):
+    time.sleep(seconds)
+
+
+def tax_reserved_usd(journal, cfg, now):
+    """USD held for tax; the live check never spends it. An unusable tax plan
+    means the reserve is unknown, so the check holds."""
+    try:
+        _, plan, _ = make_plan(journal, cfg, now)
+        return plan.reserved(now)[1]
+    except Exception as exc:
+        raise Stop("Tax reserves cannot be checked (" + type(exc).__name__ + "); live check holds") from exc
+
+
+def live_check_command(args):
+    """plan (read-only) / execute / resume / stop / status. Financial requests
+    only with --plan and --confirm-live, within that plan."""
+    cfg, state, settings = load_config(args.config, allow_unverified_live=True)
+    if args.action in ("execute", "resume") and not (args.plan and args.confirm_live):
+        raise Stop("execute/resume need --plan ID and --confirm-live; nothing was sent")
+    if args.action == "stop" and not args.plan:
+        raise Stop("stop needs --plan ID")
+    if args.action == "plan" and args.budget_usd is None:
+        raise Stop("plan needs --budget-usd (there is no default budget)")
+    if args.action == "status":
+        journal = Journal(state / "journal.sqlite")
+        try:
+            livecheck.ensure_schema(journal.db)
+            ids = [args.plan] if args.plan else [r[0] for r in journal.db.execute(
+                "SELECT plan_id FROM live_checks ORDER BY created DESC LIMIT 5")]
+            output({"live_checks": [livecheck.report(journal, i) for i in ids],
+                    "blocking": livecheck.blocking(journal, account_marker_path(cfg))})
+        finally:
+            journal.db.close()
+        return 0
+    load_env(Path(args.config).resolve().parent / "secrets.env")
+    with open(state / "run.lock", "a") as lock, open(account_lock_path(cfg), "a") as account:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(account, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise Stop("Another process is working on this account; nothing was sent") from None
+        journal = Journal(state / "journal.sqlite")
+        try:
+            return live_check_locked(args, cfg, state, settings, journal)
+        finally:
+            journal.db.close()
+
+
+def live_check_locked(args, cfg, state, settings, journal):
+    from .core import Locked, UnknownOutcome
+    now = datetime.now(timezone.utc)
+    marker = account_marker_path(cfg)
+    livecheck.ensure_schema(journal.db)
+    if args.action == "stop":
+        livecheck.request_stop(journal, args.plan, now)
+        data = livecheck.report(journal, args.plan)
+        livecheck.write_report(state, args.plan, data)
+        output(data)
+        return 0
+    live = args.action in ("execute", "resume")
+    client = Client(state, allow_mutations=live)
+    if args.action == "plan":
+        broker = Meritz(client, journal, settings.instrument_markets)
+        plan, reasons = livecheck.create_plan(journal, broker, settings, budget=args.budget_usd, now=now,
+                                              tax_reserved_usd=tax_reserved_usd(journal, cfg, now), state_dir=state)
+        if plan:
+            livecheck.write_report(state, plan["plan_id"], livecheck.report(journal, plan["plan_id"]))
+        output({"plan": plan, "refused": reasons, "financial_requests_sent": 0})
+        return 0 if plan else 1
+    row = livecheck._row(journal, args.plan)
+    if row is None:
+        raise Stop("Unknown live-check plan")
+    if args.action == "execute" and row["status"] != "planned":
+        raise Stop(f"Plan is {row['status']}; execute accepts a fresh plan only")
+    if args.action == "resume" and row["status"] not in livecheck.BLOCKING:
+        raise Stop(f"Plan is {row['status']}; nothing to resume (a new plan is needed for new trades)")
+    client.mutation_filter = livecheck.transport_filter(journal, args.plan, row["plan"]["routes"])
+    broker = Meritz(client, journal, settings.instrument_markets)
+    notifier = Notifier(journal, enabled=cfg.get("notifications", True))
+    engine = Engine(broker, journal, settings)
+    engine.clock = lambda: datetime.now(timezone.utc)
+    if args.action == "execute":
+        livecheck.start_checked(journal, broker, args.plan, now, marker=marker, state_dir=state)
+    results, started = [], now
+    done_before = set(livecheck.ledger(journal, row["plan"])["done_steps"])
+    try:
+        while True:
+            now = engine.clock()
+            schedule = Schedule(now)
+            session_row = schedule.trading_session(now)
+            market = confirm_regular_session(schedule, broker.market_status, now) if session_row else None
+            may_manage = bool(market and market["regular"])
+            may_trade = schedule.execution_window(now) and may_manage
+            result = livecheck.tick(engine, journal, args.plan, now, may_trade=may_trade, may_manage=may_manage,
+                                    deadline=schedule.execution_deadline(now) if may_trade else None,
+                                    session=schedule.session_key(now),
+                                    tax_reserved_usd=tax_reserved_usd(journal, cfg, now), marker=marker,
+                                    unwind=bool(args.unwind))
+            results.append({"at": now.isoformat(), "result": result})
+            done = set(livecheck.ledger(journal, row["plan"])["done_steps"])
+            for step in sorted(done - done_before):
+                side, symbol = livecheck.STEPS[step - 1]
+                notifier.send("check", f"{args.plan}:{step}",
+                              f"실계좌 검증 {step}/6단계 체결 확인: {symbol} {'매수' if side == 'buy' else '매도'}", now)
+            done_before = done
+            if result in ("complete",) or result.startswith(("stopped", "stopping:", "idle:")):
+                break
+            if (now - started).total_seconds() > LIVE_CHECK_MAX_MINUTES * 60 or len(results) >= LIVE_CHECK_MAX_TICKS:
+                results.append({"at": now.isoformat(), "result": "paused: time limit; resume later"})
+                break
+            live_check_sleep(LIVE_CHECK_POLL_SECONDS)
+    except (Stop, Locked, UnknownOutcome) as exc:
+        results.append({"at": engine.clock().isoformat(), "error": str(exc)})
+        notifier.send("check", f"{args.plan}:hold:{hold_code(str(exc))}", "실계좌 검증 보류: " + str(exc),
+                      engine.clock())
+        data = dict(livecheck.report(journal, args.plan), run=results)
+        livecheck.write_report(state, args.plan, data)
+        output(data)
+        return 1
+    data = dict(livecheck.report(journal, args.plan), run=results)
+    if data["status"] in ("completed", "stopped"):
+        notifier.send("check", f"{args.plan}:{data['status']}",
+                      "실계좌 검증 " + ("완료: 테스트 보유 없음, USD로 종료" if data["status"] == "completed"
+                                  else "중단 완료: 테스트 보유 없음"), engine.clock())
+    livecheck.write_report(state, args.plan, data)
+    output(data)
+    return 0
+
+
 def utcnow():
     return datetime.now(timezone.utc)
 
@@ -510,6 +657,7 @@ def local_status(args):
             "monitor": {"instance": heartbeat.instance_id(journal), "last_send": journal.meta("monitor_last_send")},
             "pending": [{k: r[k] for k in ("id", "kind", "status", "created", "session", "filled", "attempt")}
                         for r in journal.pending()],
+            "live_check": livecheck.blocking(journal, account_marker_path(cfg)),
             "books": books.diagnose(journal, datetime.now(timezone.utc))})
     return 0
 
@@ -639,6 +787,14 @@ def main():
     os.umask(0o077)
     p = argparse.ArgumentParser(description="Meritz DD15/12 automation; defaults to read-only observation")
     sub = p.add_subparsers(dest="command", required=True)
+    s = sub.add_parser("live-check", help="Small real-account check of TQQQ/SGOV with a named USD budget; "
+                                           "existing holdings are never ordered")
+    s.add_argument("action", choices=["plan", "execute", "resume", "stop", "status"])
+    s.add_argument("--config", default="config.json")
+    s.add_argument("--budget-usd", help="plan: USD budget for the whole check (required, no default)")
+    s.add_argument("--plan", help="plan id (execute/resume/stop/status)")
+    s.add_argument("--confirm-live", action="store_true", help="execute/resume: allow this plan's real requests")
+    s.add_argument("--unwind", action="store_true", help="resume after stop: sell only the check's own shares")
     for name in ("run", "doctor", "status", "resolve", "unlock", "tax", "tax-sync", "telegram"):
         s = sub.add_parser(name)
         s.add_argument("--config", default="config.json")
@@ -664,7 +820,7 @@ def main():
             return 0
         return {"run": run, "doctor": doctor, "status": local_status, "resolve": resolve,
                 "unlock": unlock, "demo": demo, "tax": tax_command, "tax-sync": tax_sync_command,
-                "telegram": telegram_command}[args.command](args)
+                "telegram": telegram_command, "live-check": live_check_command}[args.command](args)
     except (Stop, OSError, ValueError) as exc:
         output({"error": str(exc) if isinstance(exc, Stop) else type(exc).__name__})
         return 1
