@@ -12,6 +12,7 @@ from .core import (D, SUBMITTING, UNKNOWN, Engine, Journal, JournalError, Settin
 from .history import refresh
 from .meritz import AuthError, Client, Meritz
 from .notify import Notifier, default_channels, scrub, secret_values
+from . import tax, telegram_bot
 from .paper import Paper
 from .schedule import KST, Schedule, confirm_regular_session
 
@@ -129,6 +130,58 @@ def after_success(journal, notifier, result, signal, session, now):
         journal.put_meta("heartbeat_day", day)
 
 
+def tax_notices(journal, notifier, settings, now):
+    """December estimate; January recalculation after year-end trades settle."""
+    local = now.astimezone(KST)
+    if local.month == 12:
+        year, code = local.year, f"dec:{local.year}"
+        message = f"{year}년 귀속 예상 양도소득세(추정)입니다. 1월에 연말 거래·결제를 반영해 다시 계산합니다."
+    elif local.month == 1:
+        year, code = local.year - 1, f"jan:{local.year - 1}"
+        message = f"{year}년 귀속 예상 양도소득세를 연말 거래·결제를 반영해 다시 계산했습니다."
+    else:
+        return
+    if journal.meta("tax_notice:" + code):
+        return
+    est = tax.estimate(journal.db, settings, year, holdings=journal.meta("last_positions"))
+    message += " 자료 상태: " + ("확정 가능" if est["complete"] else "추정") + (
+        ", 이 계좌만의 추정" if est["this_account_only"] else "")
+    notifier.send("tax", code, message, now, amounts=[
+        ("estimated_tax", est["estimated_tax_krw"]), ("account_net", est["account_net_krw"]),
+        ("external_net", est["external_net_krw"]), ("taxable", est["taxable_krw"])])
+    journal.put_meta("tax_notice:" + code, now.isoformat())
+
+
+def housekeeping(journal, notifier, cfg, broker, schedule, now):
+    """After the trading tick: tax ledger sync (daily, US market closed), tax
+    notices and Telegram commands. Every failure here is recorded and ignored;
+    none of it can change trading state or send a financial request."""
+    tax_cfg = cfg.get("tax", {}) or {}
+    try:
+        settings = tax.TaxSettings.from_config(tax_cfg)
+        tax.ensure_schema(journal.db)
+    except Exception as exc:
+        journal.event("tax_failed", {"stage": "settings", "error_type": type(exc).__name__}, now)
+        return
+    day = now.astimezone(KST).date().isoformat()
+    if broker is not None and schedule is not None and not schedule.trading_session(now):
+        info = journal.meta("tax_sync") or {}
+        if info.get("day") != day:
+            try:
+                result = tax.sync(journal.db, broker, [s[0] for s in schedule.sessions], now,
+                                  str(tax_cfg.get("ledger_start", "00000000")))
+                journal.put_meta("tax_sync", dict(result, day=day, ok=True))
+            except Exception as exc:
+                journal.put_meta("tax_sync", {"day": day, "ok": False,
+                                              "error": str(exc) if isinstance(exc, Stop) else type(exc).__name__})
+    for step in (lambda: tax_notices(journal, notifier, settings, now),
+                 lambda: telegram_bot.poll(journal, settings, now) if cfg.get("notifications", True) else 0):
+        try:
+            step()
+        except Exception as exc:
+            journal.event("housekeeping_failed", {"error_type": type(exc).__name__}, now)
+
+
 def run(args):
     cfg, state, settings = load_config(args.config)
     load_env(Path(args.config).resolve().parent / "secrets.env")
@@ -156,6 +209,7 @@ def run_locked(cfg, state, settings):
         return journal_unusable(marker, cfg, now, str(exc))
     notifier = Notifier(journal, enabled=cfg.get("notifications", True))
     notifier.retry_pending(now)   # failed one-time messages are not lost if the event never repeats
+    broker = schedule = None
     try:
         client = Client(state, allow_mutations=settings.mode == "live")
         broker = Meritz(client, journal)
@@ -248,6 +302,7 @@ def run_locked(cfg, state, settings):
         output({"error": message, "mode": settings.mode})
         return 1
     finally:
+        housekeeping(journal, notifier, cfg, broker, schedule, now)
         journal.db.close()
 
 
@@ -380,11 +435,65 @@ def unlock(args):
     return 0
 
 
+def tax_command(args):
+    """Local estimate from the stored ledger. No network request."""
+    cfg, state, _ = load_config(args.config, allow_unverified_live=True)
+    journal = Journal(state / "journal.sqlite")
+    try:
+        tax.ensure_schema(journal.db)
+        settings = tax.TaxSettings.from_config(cfg.get("tax"))
+        now = datetime.now(timezone.utc)
+        years = [now.year] if now.month > 5 else [now.year - 1, now.year]
+        report = {str(y): tax.estimate(journal.db, settings, y, holdings=journal.meta("last_positions"))
+                  for y in years}
+        output({"estimates": report, "sync": journal.meta("tax_sync")})
+    finally:
+        journal.db.close()
+    return 0
+
+
+def tax_sync_command(args):
+    """Read-only ledger sync: GET requests and token issue only."""
+    cfg, state, _ = load_config(args.config, allow_unverified_live=True)
+    load_env(Path(args.config).resolve().parent / "secrets.env")
+    with open(state / "run.lock", "a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise Stop("Another run is using this state directory; retry shortly")
+        journal = Journal(state / "journal.sqlite")
+        try:
+            tax.ensure_schema(journal.db)
+            now = datetime.now(timezone.utc)
+            broker = Meritz(Client(state, allow_mutations=False), journal)
+            schedule = Schedule(now)
+            result = tax.sync(journal.db, broker, [s[0] for s in schedule.sessions], now,
+                              str((cfg.get("tax") or {}).get("ledger_start", "00000000")))
+            journal.put_meta("tax_sync", dict(result, day=now.astimezone(KST).date().isoformat(), ok=True))
+            output(result)
+        finally:
+            journal.db.close()
+    return 0
+
+
+def telegram_command(args):
+    """Process pending Telegram commands once (tax plan only; never trades)."""
+    cfg, state, _ = load_config(args.config, allow_unverified_live=True)
+    load_env(Path(args.config).resolve().parent / "secrets.env")
+    journal = Journal(state / "journal.sqlite")
+    try:
+        output({"processed": telegram_bot.poll(journal, tax.TaxSettings.from_config(cfg.get("tax")),
+                                               datetime.now(timezone.utc))})
+    finally:
+        journal.db.close()
+    return 0
+
+
 def main():
     os.umask(0o077)
     p = argparse.ArgumentParser(description="Meritz DD15/12 automation; defaults to read-only observation")
     sub = p.add_subparsers(dest="command", required=True)
-    for name in ("run", "doctor", "status", "resolve", "unlock"):
+    for name in ("run", "doctor", "status", "resolve", "unlock", "tax", "tax-sync", "telegram"):
         s = sub.add_parser(name)
         s.add_argument("--config", default="config.json")
         if name == "doctor":
@@ -408,7 +517,8 @@ def main():
             output(replay(args.scenario, args.state, max_sessions=args.sessions))
             return 0
         return {"run": run, "doctor": doctor, "status": local_status, "resolve": resolve,
-                "unlock": unlock, "demo": demo}[args.command](args)
+                "unlock": unlock, "demo": demo, "tax": tax_command, "tax-sync": tax_sync_command,
+                "telegram": telegram_command}[args.command](args)
     except (Stop, OSError, ValueError) as exc:
         output({"error": str(exc) if isinstance(exc, Stop) else type(exc).__name__})
         return 1

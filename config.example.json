@@ -24,6 +24,11 @@
     "recovery_close_buffer_minutes": 10,
     "recovery_retry_seconds": 300
   },
+  "tax": {
+    "basic_deduction_krw": 2500000,
+    "rate": "0.22",
+    "ledger_start": "00000000"
+  },
   "verified": {
     "split_only_data": false,
     "usd_buying_power_and_fees": false,

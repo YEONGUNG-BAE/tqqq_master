@@ -203,11 +203,11 @@ class Client:
             raise Stop("Incomplete paginated response; no trading on a partial snapshot")
         return response
 
-    def pages(self, path, *, query):
+    def pages(self, path, *, query, max_pages=100):
         """History-only cursor protocol: preserve whitespace, bound loops, finish all pages."""
         params = dict(query)
         rows, cursors = [], set()
-        for _ in range(100):
+        for _ in range(max_pages):
             response = self.call("GET", path, query=params,
                                  success=("5762", "5766", "5820"), allow_paginated=True)
             chunk = response.get("data", [])
@@ -690,6 +690,29 @@ class Meritz:
                     raise Stop("Invalid daily close")
                 result[day] = price
         return result
+
+    # ---- tax ledger sources (read-only) ----
+
+    def transactions(self, first, last):
+        """Account cash/trade ledger, oldest first, every page (fees, dividends)."""
+        return self.client.pages("/accounts/v1/me/transactions",
+                                 query={"from": first, "to": last, "sort": "ASC"}, max_pages=1000)
+
+    def fill_history(self, first, last):
+        """Order rows that carry fills, every page (orders placed by the bot or in the app)."""
+        rows = self.client.pages("/trading/v1/overseas/orders/history", query=dict(
+            oder_sta_date=first, oder_fin_date=last, seln_byov_clcd="0", cntg_cls_code="1"), max_pages=1000)
+        keys = [(r["oder_date"], int(r["oder_no"])) for r in rows]
+        if len(set(keys)) != len(keys):
+            raise Stop("Duplicate orders across ledger pages")
+        return rows
+
+    def base_rate(self, day):
+        """KRW per USD base rate (deal_stnd_exrt) posted for `day` (YYYYMMDD), or None."""
+        rows = self._get("/forex/v1/rates", stnd_date=day, crcd="USD") or []
+        rows = rows if isinstance(rows, list) else [rows]
+        usd = [r for r in rows if r.get("crcd") == "USD" and r.get("deal_stnd_exrt")]
+        return money(usd[0]["deal_stnd_exrt"]) if len(usd) == 1 else None
 
     def market_status(self):
         """Raw US market-hours fields. Interpretation lives in

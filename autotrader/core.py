@@ -909,6 +909,8 @@ class Engine:
             target = None
         locked = self.j.meta("halt")
         snap = self.broker.snapshot()
+        # Quantities only (no amounts), for reconciling the tax ledger with holdings.
+        self.j.put_meta("last_positions", {s: str(q) for s, q in snap.positions.items()})
         # Read-only settling of requests this engine already sent runs first, even
         # under a lock, reservations or an unconfirmed market. Own-order cancels
         # are allowed only while unlocked and the market permits them.

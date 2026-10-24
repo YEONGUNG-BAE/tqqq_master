@@ -5,6 +5,10 @@ is recorded and otherwise ignored: it can never reset trading state or cause a
 request to be resent. Repeats of the same cause are suppressed across restarts
 (the record lives in the state database). Texts carry no keys, tokens, account
 or order numbers, balances or amounts.
+
+Exception, tax only: tax notices and /tax replies may show tax amounts. They are
+rendered from a fixed set of structured fields (TAX_FIELDS); the general number
+masking still applies to every free-text part, and secrets are always removed.
 """
 from __future__ import annotations
 
@@ -21,10 +25,19 @@ from urllib.request import Request, urlopen
 
 # Repeat window per category: same (category, code) is not sent again inside it.
 WINDOWS = {"hold": timedelta(hours=6), "lock": timedelta(hours=6), "carryover": timedelta(days=7),
-           "recovered": timedelta(minutes=30), "done": timedelta(hours=12), "ok": timedelta(hours=20)}
+           "recovered": timedelta(minutes=30), "done": timedelta(hours=12), "ok": timedelta(hours=20),
+           "tax": timedelta(days=400)}
 RETRY_AFTER_FAILURE = timedelta(minutes=30)
 RETRY_GIVE_UP = timedelta(hours=24)     # a failed message is retried for at most a day
-TITLES = {"ok": "정상", "done": "완료", "hold": "보류", "recovered": "복구", "lock": "잠금", "carryover": "이월"}
+TITLES = {"ok": "정상", "done": "완료", "hold": "보류", "recovered": "복구", "lock": "잠금", "carryover": "이월",
+          "tax": "세금"}
+# The only amounts a message may carry. Values must be numbers; labels are fixed.
+TAX_FIELDS = {"estimated_tax": "예상 세액", "account_net": "이 계좌 순손익", "external_net": "다른 증권사 입력 손익",
+              "taxable": "과세표준", "deduction": "기본공제", "paid": "납부 완료", "reserve_krw": "계좌 원화 준비금",
+              "reserve_usd_krw": "달러 준비금(보수적 원화 환산)", "withdrawn_pending": "세금용 출금(납부 확인 대기)",
+              "external_planned": "외부 재원 예정", "external_secured": "외부 재원 확보", "shortfall": "미확보액",
+              "installment_target": "이번 회차 누적 목표", "installment_due": "이번 회차 확보 필요액",
+              "transfer": "이체할 금액", "dividends_usd": "배당 합계(USD)"}
 FOOTERS = {"hold": "조건이 해소되면 자동으로 재개합니다.",
            "carryover": "다음 실행창에서 최신 신호와 잔고로 다시 계산합니다.",
            "lock": "신규 주문·환전을 멈췄습니다. 조회와 상태 대조는 계속합니다."}
@@ -39,6 +52,27 @@ def scrub(text, secrets=()):
         if secret and len(secret) >= 4:
             text = text.replace(secret, "[REDACTED]")
     return _LONG_NUMBER.sub("#", text)[:400]
+
+
+def remove_secrets(text, secrets=()):
+    text = str(text)
+    for secret in secrets:
+        if secret and len(secret) >= 4:
+            text = text.replace(secret, "[REDACTED]")
+    return text
+
+
+def render_amounts(amounts):
+    """Structured tax amounts only: fixed labels, numeric values, KRW unless USD."""
+    from decimal import Decimal
+    lines = []
+    for key, value in amounts:
+        if key not in TAX_FIELDS:
+            raise ValueError("not an allowed tax field: " + str(key))
+        number = Decimal(str(value))
+        lines.append(f"{TAX_FIELDS[key]}: " + (f"${number:,.2f}" if key.endswith("_usd")
+                                               else f"₩{int(number):,}"))
+    return lines
 
 
 def macos_channel(text):
@@ -93,10 +127,11 @@ class Notifier:
         self.enabled = enabled
         self.channels = channels
 
-    def send(self, category, code, message, now, *, required=None):
-        """Returns True if a notification was attempted. Never raises."""
+    def send(self, category, code, message, now, *, required=None, amounts=None):
+        """Returns True if a notification was attempted. Never raises. `amounts`
+        (tax only) is a list of (TAX_FIELDS key, number) rendered unmasked."""
         try:
-            return self._send(category, code, message, now, required)
+            return self._send(category, code, message, now, required, amounts)
         except Exception as exc:
             try:
                 self.j.event("notification_failed", {"category": category, "error_type": type(exc).__name__}, now)
@@ -104,7 +139,7 @@ class Notifier:
                 pass
             return False
 
-    def _send(self, category, code, message, now, required):
+    def _send(self, category, code, message, now, required, amounts=None):
         """Per-channel bookkeeping: a channel that delivered is quiet for the
         category window; a channel that failed is retried after 30 minutes, even
         when another channel succeeded."""
@@ -130,6 +165,10 @@ class Notifier:
         if FOOTERS.get(category):
             lines.append(FOOTERS[category])
         text = scrub("\n".join(lines), secret_values())
+        if amounts:
+            if category != "tax":
+                raise ValueError("amounts are allowed in tax messages only")
+            text = remove_secrets(text + "\n" + "\n".join(render_amounts(amounts)), secret_values())
         delivered, failed = [], []
         status = dict(record.get("channels", {})) if record else {}
         for name, channel in due.items():
