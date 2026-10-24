@@ -97,9 +97,15 @@ HELP = ("조회: /status (상태), /issues (문제·필요한 조치) — '상�
 
 
 
+PLAN_UNAVAILABLE = ("세금 계획을 지금 열 수 없어 이 명령은 반영하지 않았습니다. 복구된 뒤 다시 보내 주세요. "
+                    "현재 상태는 /status, 문제는 /issues 로 확인할 수 있습니다.")
+
+
 class Context:
-    def __init__(self, db, settings, now, extra_lines=None, handlers=None, estimate_fn=None, years=None):
+    def __init__(self, db, settings, now, extra_lines=None, handlers=None, estimate_fn=None, years=None,
+                 plan_unavailable=False):
         self.db, self.settings, self.now = db, settings, now
+        self.plan_unavailable = plan_unavailable
         self.extra_lines = extra_lines
         self.handlers = handlers or {}
         self.estimate_fn = estimate_fn
@@ -140,6 +146,8 @@ def handle(ctx, text):
     if READONLY.get(command) == "issues":
         from .ops import issues_lines
         return "\n".join(issues_lines(ctx.db, ctx.now, monitor_configured=bool(os.environ.get("MONITOR_URL"))))
+    if ctx.plan_unavailable and command.startswith("/"):
+        return PLAN_UNAVAILABLE                         # consumed in order, nothing applied
     if command in ("/tax", "/세금"):
         return "\n".join(tax_report_lines(ctx.db, ctx.settings, ctx.now, ctx.extra_lines, ctx.estimate_fn, ctx.years))
     if command in ctx.handlers:
@@ -186,7 +194,7 @@ def fetch(journal, transport=None):
 
 
 def process(journal, updates, settings, now, transport=None, *, chat_id=None, extra_lines=None, handlers=None,
-            estimate_fn=None, years=None, readonly_only=False):
+            estimate_fn=None, years=None, readonly_only=False, plan_unavailable=False):
     """Apply each update at most once across every process sharing the DB.
 
     Per update, in one IMMEDIATE transaction: re-check it is unprocessed, run
@@ -201,8 +209,12 @@ def process(journal, updates, settings, now, transport=None, *, chat_id=None, ex
     transport = _transport(transport)
     journal.db.execute(SCHEMA)
     journal.db.commit()
-    tax.ensure_schema(journal.db)
-    ctx = Context(journal.db, settings, now, extra_lines, handlers, estimate_fn, years)
+    try:
+        tax.ensure_schema(journal.db)                   # /status and /issues never depend on it
+    except Exception:
+        plan_unavailable = True
+    ctx = Context(journal.db, settings, now, extra_lines, None if plan_unavailable else handlers, estimate_fn,
+                  years, plan_unavailable=plan_unavailable)
     applied = 0
     for update in updates:
         uid = int(update.get("update_id", 0))
@@ -245,13 +257,14 @@ def process(journal, updates, settings, now, transport=None, *, chat_id=None, ex
 
 
 def poll(journal, settings, now, *, transport=None, chat_id=None, extra_lines=None, handlers=None,
-         estimate_fn=None, years=None):
+         estimate_fn=None, years=None, plan_unavailable=False):
     """fetch + process (used inside `run`, which already holds the state lock)."""
     transport = _transport(transport)
     if transport is None:
         return 0
     return process(journal, fetch(journal, transport), settings, now, transport, chat_id=chat_id,
-                   extra_lines=extra_lines, handlers=handlers, estimate_fn=estimate_fn, years=years)
+                   extra_lines=extra_lines, handlers=handlers, estimate_fn=estimate_fn, years=years,
+                   plan_unavailable=plan_unavailable)
 
 
 # ---- tax plan commands (stage 3) ----

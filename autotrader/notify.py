@@ -51,10 +51,12 @@ def _kst_text(at):
 
 
 def _late_text(entry, resolved_at):
-    """A message re-sent after an outage says when it happened, and that it is
-    already resolved when it is, so a past problem never reads as current."""
-    head = f"[재전송 · 발생 {_kst_text(entry['first'])} KST"
-    if resolved_at:
+    """A message re-sent after an outage says when THIS occurrence happened, and
+    that it is resolved only if the resolution came after it (a recurrence never
+    borrows the previous occurrence's resolution)."""
+    occurred = entry.get("occurred", entry["first"])
+    head = f"[재전송 · 발생 {_kst_text(occurred)} KST"
+    if resolved_at and datetime.fromisoformat(resolved_at) >= datetime.fromisoformat(occurred):
         head += f" · 이미 해소됨 {_kst_text(resolved_at)} KST"
     return head + "]\n" + entry["text"]
 
@@ -221,7 +223,8 @@ class Notifier:
                                      "first": now.isoformat(), "attempts": 0}
         entry["channels"] = sorted((set(entry["channels"]) - set(delivered)) | {f["channel"] for f in failed})
         if failed:
-            entry.update(text=text, attempts=entry["attempts"] + 1,
+            # `occurred` is this occurrence's time; a recurrence replaces it.
+            entry.update(text=text, occurred=now.isoformat(), attempts=entry["attempts"] + 1,
                          retry_at=(now + RETRY_AFTER_FAILURE).isoformat())
         if entry["channels"]:
             pending[key] = entry

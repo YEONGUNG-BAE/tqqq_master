@@ -120,9 +120,14 @@ def fingerprint(journal, intent):
             "to_tax": str(intent.get("to_tax", "0")), "filled": filled}
 
 
+# Channels that reach the user away from the Mac. A macOS banner on a screen
+# nobody watches does not count, so it can never silence the external monitor.
+REMOTE_CHANNELS = ("telegram", "smtp")
+
+
 def delivered(journal, key):
     record = (journal.meta("notified", {}) or {}).get(key) or {}
-    return any(c.get("ok") for c in (record.get("channels") or {}).values())
+    return any(c.get("ok") for name, c in (record.get("channels") or {}).items() if name in REMOTE_CHANNELS)
 
 
 def _kst(at):

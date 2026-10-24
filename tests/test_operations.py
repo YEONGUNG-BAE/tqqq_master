@@ -366,6 +366,11 @@ class ServiceTests(unittest.TestCase):
             script = Path(tmp) / "install_launchd.py"
             script.write_text((ROOT / "install_launchd.py").read_text())
             out = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=30)
+            if os.getuid() == 0:
+                # Intended refusal: the service files must be made by the Mac user.
+                self.assertNotEqual(out.returncode, 0)
+                self.assertIn("not root", out.stderr)
+                return
             self.assertEqual(out.returncode, 0, out.stderr)
             daemon = plistlib.loads((Path(tmp) / "local.tqqq.runner.plist").read_bytes())
             agent = plistlib.loads((Path(tmp) / "local.tqqq.observer.plist").read_bytes())

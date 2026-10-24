@@ -1,4 +1,4 @@
-# 검증 출력 — 2026-10-24 19:43 KST, macOS Darwin 25.5.0
+# 검증 출력 — 2026-10-24 19:57 KST, macOS Darwin 25.5.0
 # Python 3.14.5 | exchange-calendars 4.12 | pandas 2.3.3 | NumPy 2.5.4
 # 명령: .venv/bin/python -m unittest discover -s tests -v
 # exchange-calendars의 NumPy DeprecationWarning은 알려진 경고이며 결과에 영향 없음
@@ -99,7 +99,7 @@ test_healthy_plan_baseline (test_audit_f.CliTests.test_healthy_plan_baseline) ..
   delta = pd.Timedelta(
 <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
   delta = pd.Timedelta(
-/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a83ab60>
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10eadef20>
   d = dict(zip(self.fieldnames, row))
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
@@ -187,7 +187,7 @@ test_lost_order_reply_then_token_expiry_recovers_without_resend (test_fault_inje
 test_token_refusal_is_explicit_and_post_token_error_is_not_resent (test_fault_injection.AuthAndTokenTests.test_token_refusal_is_explicit_and_post_token_error_is_not_resent) ... ok
 test_repeated_token_refusal_locks_and_unlock_resumes (test_fault_injection.CliAuthLockTests.test_repeated_token_refusal_locks_and_unlock_resumes) ... ok
 test_overlapping_scheduler_or_second_state_folder_does_nothing (test_fault_injection.CliConcurrencyTests.test_overlapping_scheduler_or_second_state_folder_does_nothing) ... ok
-test_corrupt_state_database_blocks_every_request (test_fault_injection.CliStateAndNotificationTests.test_corrupt_state_database_blocks_every_request) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/encoder.py:254: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a83ba60>
+test_corrupt_state_database_blocks_every_request (test_fault_injection.CliStateAndNotificationTests.test_corrupt_state_database_blocks_every_request) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/encoder.py:254: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10eadda80>
   _iterencode = c_make_encoder(
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
@@ -388,6 +388,18 @@ test_read_only_pass_stops_at_the_first_plan_change (test_operations.TelegramStat
 test_run_answers_status_while_another_process_holds_the_state_lock (test_operations.TelegramStatusTests.test_run_answers_status_while_another_process_holds_the_state_lock) ... ok
 test_stale_state_is_never_presented_as_current (test_operations.TelegramStatusTests.test_stale_state_is_never_presented_as_current) ... ok
 test_status_and_issues_answer_from_local_state_without_sensitive_figures (test_operations.TelegramStatusTests.test_status_and_issues_answer_from_local_state_without_sensitive_figures) ... ok
+test_housekeeping_still_answers_status_when_the_tax_plan_cannot_be_built (test_operations_fixes.ChatWithBrokenTaxPlanTests.test_housekeeping_still_answers_status_when_the_tax_plan_cannot_be_built) ... ok
+test_status_survives_a_broken_tax_schema (test_operations_fixes.ChatWithBrokenTaxPlanTests.test_status_survives_a_broken_tax_schema) ... ok
+test_telegram_command_answers_when_make_plan_fails (test_operations_fixes.ChatWithBrokenTaxPlanTests.test_telegram_command_answers_when_make_plan_fails) ... ok
+test_a_copy_of_an_occurrence_resolved_later_still_says_so (test_operations_fixes.OccurrenceTests.test_a_copy_of_an_occurrence_resolved_later_still_says_so) ... ok
+test_a_recurrence_never_borrows_the_previous_resolution (test_operations_fixes.OccurrenceTests.test_a_recurrence_never_borrows_the_previous_resolution) ... ok
+test_a_recurrence_while_the_old_copy_is_still_pending_is_dated_by_the_new_occurrence (test_operations_fixes.OccurrenceTests.test_a_recurrence_while_the_old_copy_is_still_pending_is_dated_by_the_new_occurrence) ... ok
+test_mac_banner_alone_does_not_count_as_delivered (test_operations_fixes.RemoteDeliveryTests.test_mac_banner_alone_does_not_count_as_delivered) ... ok
+test_telegram_success_counts_as_delivered (test_operations_fixes.RemoteDeliveryTests.test_telegram_success_counts_as_delivered) ... ok
+test_without_any_remote_channel_the_monitor_is_not_silenced (test_operations_fixes.RemoteDeliveryTests.test_without_any_remote_channel_the_monitor_is_not_silenced) ... <project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10eb7c5e0>
+  converted = ints_to_pydatetime(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
 test_pages_preserve_cursor_whitespace_and_request_all_records (test_recovery.AdapterRecoveryTests.test_pages_preserve_cursor_whitespace_and_request_all_records) ... ok
 test_prior_date_fully_filled_order_recovered_from_detail (test_recovery.AdapterRecoveryTests.test_prior_date_fully_filled_order_recovered_from_detail) ... ok
 test_prior_date_partial_is_not_assumed_cancelled (test_recovery.AdapterRecoveryTests.test_prior_date_partial_is_not_assumed_cancelled) ... ok
@@ -396,7 +408,37 @@ test_same_number_wrong_symbol_is_not_reconciled (test_recovery.AdapterRecoveryTe
 test_state_cannot_bind_to_different_api_key (test_recovery.AdapterRecoveryTests.test_state_cannot_bind_to_different_api_key) ... ok
 test_token_from_different_key_is_not_reused (test_recovery.AdapterRecoveryTests.test_token_from_different_key_is_not_reused) ... ok
 test_unknown_order_code_stops (test_recovery.AdapterRecoveryTests.test_unknown_order_code_stops) ... ok
-test_more_than_252_missing_sessions_are_all_replayed (test_recovery.HistoryGapTests.test_more_than_252_missing_sessions_are_all_replayed) ... ok
+test_more_than_252_missing_sessions_are_all_replayed (test_recovery.HistoryGapTests.test_more_than_252_missing_sessions_are_all_replayed) ... <project>/autotrader/signal.py:80: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10b4ca110>
+  if previous == RISK_SYMBOL and price <= high * Decimal("0.85"):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<project>/autotrader/signal.py:80: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10b3c17b0>
+  if previous == RISK_SYMBOL and price <= high * Decimal("0.85"):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<project>/autotrader/signal.py:80: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10b3c0e50>
+  if previous == RISK_SYMBOL and price <= high * Decimal("0.85"):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<project>/autotrader/signal.py:80: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10eadf6a0>
+  if previous == RISK_SYMBOL and price <= high * Decimal("0.85"):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<project>/autotrader/signal.py:80: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10eadee30>
+  if previous == RISK_SYMBOL and price <= high * Decimal("0.85"):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<project>/autotrader/signal.py:80: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10eadf010>
+  if previous == RISK_SYMBOL and price <= high * Decimal("0.85"):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<project>/autotrader/signal.py:80: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10eade020>
+  if previous == RISK_SYMBOL and price <= high * Decimal("0.85"):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<project>/autotrader/signal.py:80: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10eadfc40>
+  if previous == RISK_SYMBOL and price <= high * Decimal("0.85"):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<project>/autotrader/signal.py:80: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10eaddf30>
+  if previous == RISK_SYMBOL and price <= high * Decimal("0.85"):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<project>/autotrader/signal.py:80: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10eade3e0>
+  if previous == RISK_SYMBOL and price <= high * Decimal("0.85"):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
 test_excess_fill_quantity_blocks_next_action (test_recovery.ManagementTests.test_excess_fill_quantity_blocks_next_action) ... ok
 test_manage_existing_order_after_new_order_window (test_recovery.ManagementTests.test_manage_existing_order_after_new_order_window) ... ok
 test_no_cancel_mutation_outside_market (test_recovery.ManagementTests.test_no_cancel_mutation_outside_market) ... ok
@@ -413,40 +455,7 @@ test_resume_is_identical_to_uninterrupted_run_without_network (test_replay.Repla
 test_side_effect_before_lost_receipt_is_not_repeated (test_replay.ReplayTests.test_side_effect_before_lost_receipt_is_not_repeated) ... ok
 test_fx_uses_customer_applied_buy_rate_and_no_duplicate_fee (test_schema_contract.OfficialSchemaTests.test_fx_uses_customer_applied_buy_rate_and_no_duplicate_fee) ... ok
 test_order_buy_sell_and_cancel_request_fields_match_official_schema (test_schema_contract.OfficialSchemaTests.test_order_buy_sell_and_cancel_request_fields_match_official_schema) ... ok
-test_plan_shows_the_buy_held_and_the_sell_planned_when_sell_only (test_sgov.DoctorSellOnlyTests.test_plan_shows_the_buy_held_and_the_sell_planned_when_sell_only) ... <project>/autotrader/history.py:22: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a8395d0>
-  result[day] = price
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/autotrader/history.py:22: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1072c1d50>
-  result[day] = price
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/autotrader/history.py:22: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1071ed6c0>
-  result[day] = price
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/autotrader/history.py:22: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1071ecd60>
-  result[day] = price
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/autotrader/history.py:22: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a83b2e0>
-  result[day] = price
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/autotrader/history.py:22: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a83aa70>
-  result[day] = price
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/autotrader/history.py:22: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a83ac50>
-  result[day] = price
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/autotrader/history.py:22: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a83a890>
-  result[day] = price
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/autotrader/history.py:22: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a83b880>
-  result[day] = price
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/autotrader/history.py:22: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a83a4d0>
-  result[day] = price
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/autotrader/history.py:22: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a83b970>
-  result[day] = price
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-ok
+test_plan_shows_the_buy_held_and_the_sell_planned_when_sell_only (test_sgov.DoctorSellOnlyTests.test_plan_shows_the_buy_held_and_the_sell_planned_when_sell_only) ... ok
 test_confirmed_route_is_shown_and_a_conflicting_one_is_flagged (test_sgov.DoctorSgovTests.test_confirmed_route_is_shown_and_a_conflicting_one_is_flagged) ... ok
 test_holdings_state_never_counts_qqq_as_the_defensive_holding (test_sgov.DoctorSgovTests.test_holdings_state_never_counts_qqq_as_the_defensive_holding) ... ok
 test_signal_and_holdings_are_shown_apart_and_the_route_probe_is_evidence_only (test_sgov.DoctorSgovTests.test_signal_and_holdings_are_shown_apart_and_the_route_probe_is_evidence_only) ... ok
@@ -538,6 +547,6 @@ test_registered_withdrawal_moves_once_and_unrelated_ones_are_not_tax (test_tax_r
 test_release_only_by_explicit_user_command (test_tax_reserve.WithdrawalTests.test_release_only_by_explicit_user_command) ... ok
 
 ----------------------------------------------------------------------
-Ran 432 tests in 14.355s
+Ran 441 tests in 14.464s
 
 OK

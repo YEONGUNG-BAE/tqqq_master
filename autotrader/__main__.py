@@ -259,6 +259,13 @@ def housekeeping(journal, notifier, cfg, broker, schedule, now):
         settings, plan, _ = make_plan(journal, cfg, now)
     except Exception as exc:
         journal.event("tax_failed", {"stage": "settings", "error_type": type(exc).__name__}, now)
+        if cfg.get("notifications", True):
+            try:
+                # Questions are answered exactly when something is wrong: read-only
+                # views still work; tax commands are consumed in order, not applied.
+                telegram_bot.poll(journal, tax.TaxSettings(), now, plan_unavailable=True)
+            except Exception as error:
+                journal.event("housekeeping_failed", {"error_type": type(error).__name__}, now)
         return
     day = now.astimezone(KST).date().isoformat()
     if broker is not None and schedule is not None and not schedule.trading_session(now):
@@ -855,7 +862,13 @@ def telegram_command(args):
                 done = telegram_bot.process(journal, updates, tax.TaxSettings(), now, readonly_only=True)
                 output({"processed": done, "deferred_to_run": len(updates) - done})
                 return 0
-            settings, plan, _ = make_plan(journal, cfg, now)
+            try:
+                settings, plan, _ = make_plan(journal, cfg, now)
+            except Exception as exc:
+                journal.event("tax_failed", {"stage": "telegram", "error_type": type(exc).__name__}, now)
+                output({"processed": telegram_bot.process(journal, updates, tax.TaxSettings(), now,
+                                                          plan_unavailable=True), "plan_unavailable": True})
+                return 0
             lines, line_now = telegram_bot.plan_lines(plan)
             line_now[0] = now
             output({"processed": telegram_bot.process(journal, updates, settings, now, extra_lines=lines,
