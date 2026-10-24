@@ -252,7 +252,8 @@ class TaxNoticeTests(LedgerBase):
         for when in (datetime(2026, 11, 30, 3, tzinfo=timezone.utc), datetime(2026, 12, 1, 3, tzinfo=timezone.utc),
                      datetime(2026, 12, 2, 3, tzinfo=timezone.utc), datetime(2027, 1, 5, 3, tzinfo=timezone.utc),
                      datetime(2027, 1, 6, 3, tzinfo=timezone.utc), datetime(2027, 2, 1, 3, tzinfo=timezone.utc)):
-            tax_notices(self.journal, n, self.settings, when)
+            tax_notices(self.journal, n, self.settings, when,
+                        lambda y: tax.estimate(self.db, self.settings, y, holdings={}, sync=None, now=when))
         self.assertEqual(len(sent), 2)
         self.assertTrue(sent[0].startswith("[세금] 2026년 귀속 예상"))
         self.assertIn("다시 계산했습니다", sent[1])

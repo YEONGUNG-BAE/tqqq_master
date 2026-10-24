@@ -948,8 +948,9 @@ class Engine:
         if side == "sell" and symbol in intent["from"]:
             # Conservative: a sell fills at or above its limit; fee buffer deducted.
             value = filled * price * (1 - self.cfg.fee_buffer)
-            year = self._tax_year(now)
-            if year is not None and value > 0:
+            for year in self._tax_years(now):
+                if value <= 0:
+                    break
                 # The installment gap comes out of the switch proceeds; no separate tax sell.
                 value -= self.tax_plan.earmark_proceeds(year, value, now)
             intent["proceeds"] = str(money(intent["proceeds"]) + value)
@@ -1050,11 +1051,15 @@ class Engine:
 
     # ---- tax reserve (stage 3) ----
 
-    def _tax_year(self, now):
-        if self.tax_plan is None:
-            return None
-        from .tax_reserve import TaxPlan
-        return TaxPlan.due_year(now)
+    def _tax_years(self, now):
+        return self.tax_plan.active_years(now) if self.tax_plan is not None else []
+
+    def _tax_year(self, now, need="installment_due"):
+        """Oldest active tax year that still needs something (`need` > 0)."""
+        for year in self._tax_years(now):
+            if self.tax_plan.status(year, now)[need] > 0:
+                return year
+        return None
 
     def _reserved(self, now):
         if self.tax_plan is None:
@@ -1063,12 +1068,12 @@ class Engine:
 
     def _secure_cash(self, snap, now, locked):
         """Earmark unreserved cash for the current installment (no request sent)."""
-        year = self._tax_year(now)
-        if year is None or locked:
+        if locked:
             return
-        krw, usd = self._reserved(now)
-        self.tax_plan.allocate_cash(year, max(D(0), snap.krw - self.cfg.krw_reserve - krw),
-                                    max(D(0), snap.usd - self.cfg.usd_reserve - usd), now)
+        for year in self._tax_years(now):         # oldest obligation first
+            krw, usd = self._reserved(now)
+            self.tax_plan.allocate_cash(year, max(D(0), snap.krw - self.cfg.krw_reserve - krw),
+                                        max(D(0), snap.usd - self.cfg.usd_reserve - usd), now)
         self.j.commit()
 
     def _tax_sell(self, snap, target, signal_date, session, now, deadline):
@@ -1111,7 +1116,7 @@ class Engine:
         """USD reserve -> KRW reserve, only once the reverse direction is verified
         on the real account. Until then the USD stays reserved and the need is
         recorded for notification."""
-        year = self._tax_year(now)
+        year = self._tax_year(now, need="reserve_usd")
         if year is None:
             return None
         status = self.tax_plan.status(year, now)
@@ -1160,7 +1165,8 @@ class Engine:
         locked = self.j.meta("halt")
         snap = self.broker.snapshot()
         # Quantities only (no amounts), for reconciling the tax ledger with holdings.
-        self.j.put_meta("last_positions", {s: str(q) for s, q in snap.positions.items()})
+        self.j.put_meta("last_positions", {"at": now.isoformat(),
+                                           "positions": {s: str(q) for s, q in snap.positions.items()}})
         # Read-only settling of requests this engine already sent runs first, even
         # under a lock, reservations or an unconfirmed market. Own-order cancels
         # are allowed only while unlocked and the market permits them.

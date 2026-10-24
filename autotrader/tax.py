@@ -41,6 +41,9 @@ CREATE TABLE IF NOT EXISTS tax_dividends(
 CREATE TABLE IF NOT EXISTS tax_external(
   entry_id TEXT PRIMARY KEY, year INTEGER NOT NULL, broker TEXT NOT NULL, net_gain_krw TEXT NOT NULL,
   complete INTEGER NOT NULL, entered_at TEXT NOT NULL, source TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS tax_corrections(
+  seq INTEGER PRIMARY KEY AUTOINCREMENT, fill_key TEXT NOT NULL, field TEXT NOT NULL, old TEXT, new TEXT,
+  reason TEXT NOT NULL, at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS tax_issues(
   issue_key TEXT PRIMARY KEY, kind TEXT NOT NULL, detail TEXT NOT NULL, at TEXT NOT NULL);
 """
@@ -77,10 +80,61 @@ def ensure_schema(db):
     db.commit()
 
 
+# US equity settlement cycles (SEC): T+3 from 1995-06-07, T+2 from 2017-09-05,
+# T+1 from 2024-05-28 (trade date). Earlier trades: no verified rule here.
+SETTLEMENT_CYCLES = (("2024-05-28", 1), ("2017-09-05", 2), ("1995-06-07", 3))
+SETTLEMENT_BASIS = "computed from the exchange calendar and the SEC cycle for the trade date (not broker-reported)"
+
+
+def settlement_sessions(first, last):
+    """Session dates covering `first`..`last` plus margin, from the exchange
+    calendar itself (independent of the signal's short calendar)."""
+    import exchange_calendars as xc
+    start = (date.fromisoformat(first[:10]) - timedelta(days=10)).isoformat()
+    end = (date.fromisoformat(last[:10]) + timedelta(days=15)).isoformat()
+    calendar = xc.get_calendar("XNYS", start=max(start, "1990-01-02"), end=end)
+    return [d.date().isoformat() for d in calendar.sessions]
+
+
 def settlement_date(trade_date, sessions):
-    """US T+1: the first exchange session after the trade date."""
+    """(settlement date, source). None when the calendar does not cover the
+    trade, the trade date is not a session, or no verified cycle applies:
+    a far later session is never used as a stand-in."""
+    if not sessions or trade_date < sessions[0] or trade_date > sessions[-1]:
+        return None, "unverified: calendar does not cover the trade date"
+    if trade_date not in set(sessions):
+        return None, "unverified: trade date is not an exchange session"
+    cycle = next((n for start, n in SETTLEMENT_CYCLES if trade_date >= start), None)
+    if cycle is None:
+        return None, "unverified: no verified settlement cycle for this date"
     later = [d for d in sessions if d > trade_date]
-    return (later[0], "computed T+1 (exchange calendar)") if later else (None, "calendar too short")
+    if len(later) < cycle:
+        return None, "unverified: calendar too short after the trade date"
+    return later[cycle - 1], f"computed T+{cycle} ({SETTLEMENT_BASIS})"
+
+
+def repair_settlements(db, now):
+    """Recompute stored settlement dates with the era rules and a calendar that
+    covers every stored trade. A changed date clears that row's FX (it is
+    fetched again for the right day); a date without a verified basis is
+    removed (quarantined as unverified). Every change is audited. Idempotent."""
+    rows = db.execute("SELECT fill_key, trade_date, settle_date, settle_source FROM tax_fills").fetchall()
+    if not rows:
+        return 0
+    trades = [r[1] for r in rows if r[1] >= "1990-01-02"]
+    sessions = settlement_sessions(min(trades), now.date().isoformat()) if trades else []
+    changed = 0
+    for key, trade, stored, source in rows:
+        settle, new_source = settlement_date(trade, sessions)
+        if settle == stored and (settle is not None or str(source or "").startswith("unverified")):
+            continue
+        db.execute("UPDATE tax_fills SET settle_date=?, settle_source=?, fx=NULL, fx_source=NULL WHERE fill_key=?",
+                   (settle, new_source, key))
+        db.execute("INSERT INTO tax_corrections(fill_key, field, old, new, reason, at) VALUES (?,?,?,?,?,?)",
+                   (key, "settle_date", stored, settle, new_source, now.isoformat()))
+        changed += 1
+    db.commit()
+    return changed
 
 
 def _issue(db, key, kind, detail, at):
@@ -200,11 +254,16 @@ def compute(db, settings, holdings=None):
             entry["losses_krw"] += -gain
     open_lots = {s: [l for l in ls if l["open"] > 0] for s, ls in lots.items()}
     open_problems = sorted({p for ls in open_lots.values() for l in ls for p in l["problems"]})
-    unexplained = {}
-    for symbol, qty in (holdings or {}).items():
-        ledger_qty = sum((l["open"] for l in open_lots.get(symbol, [])), D(0))
-        if D(str(qty)) != ledger_qty:
-            unexplained[symbol] = str(D(str(qty)) - ledger_qty)
+    unexplained = None
+    if holdings is not None:
+        # Both sides: a symbol that vanished from the account still has ledger
+        # lots, and must be compared as 0 held.
+        unexplained = {}
+        for symbol in sorted(set(holdings) | {s for s, ls in open_lots.items() if ls}):
+            held = D(str(holdings.get(symbol, 0)))
+            ledger_qty = sum((l["open"] for l in open_lots.get(symbol, [])), D(0))
+            if held != ledger_qty:
+                unexplained[symbol] = str(held - ledger_qty)
     for y, entry in years.items():
         entry["net_krw"] = entry["gains_krw"] - entry["losses_krw"]
         entry["incomplete"] = sorted(set(entry["incomplete"]))
@@ -220,9 +279,21 @@ def dividends(db, year):
             "complete": all(_fx_ok(r[2]) for r in rows)}
 
 
-def estimate(db, settings, year, ledger=None, holdings=None):
-    """Estimated tax for `year`: this account + entered other brokers, one deduction."""
-    ledger = ledger or compute(db, settings, holdings)
+SYNC_STALE = timedelta(days=3)
+NOT_GIVEN = object()
+
+
+def estimate(db, settings, year, ledger=None, holdings=NOT_GIVEN, sync=NOT_GIVEN, now=None):
+    """Estimated tax for `year`: this account + entered other brokers, one deduction.
+
+    holdings: {} = account checked and empty; None = not checked (incomplete).
+    sync: the last ledger sync record; failed, stale or missing = incomplete.
+    (NOT_GIVEN skips a check; the engine and /tax always pass both.) Matching
+    holdings cannot prove completeness: a round trip missing from the ledger
+    leaves holdings equal. Completeness of the fill import itself rests on the
+    sync reading every page (it raises otherwise) over the configured range."""
+    checked = holdings is not NOT_GIVEN
+    ledger = ledger or compute(db, settings, holdings if checked else {})
     entry = ledger["years"].get(int(year), {"net_krw": D(0), "gains_krw": D(0), "losses_krw": D(0),
                                             "disposals": 0, "incomplete": []})
     external = list(db.execute("SELECT broker, net_gain_krw, complete FROM tax_external WHERE year=?", (int(year),)))
@@ -232,8 +303,18 @@ def estimate(db, settings, year, ledger=None, holdings=None):
     tax = (taxable * settings.rate).quantize(D(1), rounding=ROUND_DOWN)
     reasons = list(entry["incomplete"])
     reasons += [f"{i['kind']}: {i['detail']}" for i in ledger["issues"]]
-    if ledger["unexplained_holdings"]:
+    if checked and holdings is None:
+        reasons.append("holdings not checked (no recent account snapshot)")
+    elif checked and ledger["unexplained_holdings"]:
         reasons.append("holdings not explained by the ledger: " + ", ".join(sorted(ledger["unexplained_holdings"])))
+    if sync is not NOT_GIVEN:
+        if not sync:
+            reasons.append("ledger sync never ran")
+        elif not sync.get("ok"):
+            reasons.append("ledger sync failed: " + str(sync.get("error", "unknown"))[:80])
+        elif now is not None and sync.get("synced_at") and \
+                now - datetime.fromisoformat(sync["synced_at"]) > SYNC_STALE:
+            reasons.append("ledger sync is stale")
     if not external:
         reasons.append("no other-broker figures entered: this account only")
     elif not all(r[2] for r in external):
@@ -294,7 +375,19 @@ def sync(db, broker, sessions, now, start="00000000", on_ledger=None):
     today_ny = now.astimezone(ny).date().isoformat()
     last = now.astimezone(kst).strftime("%Y%m%d")
     added = 0
-    for r in broker.fill_history(start, last):
+    history = list(broker.fill_history(start, last))
+    trade_days = []
+    for r in history:
+        try:
+            trade_days.append(datetime.strptime(str(r.get("cntg_ymdh")), "%Y-%m-%d %H:%M:%S")
+                              .replace(tzinfo=kst).astimezone(ny).date().isoformat())
+        except ValueError:
+            pass
+    stored = db.execute("SELECT MIN(trade_date) FROM tax_fills").fetchone()[0]
+    first_day = min([d for d in trade_days + ([stored] if stored else []) if d >= "1990-01-02"] or [today_ny])
+    sessions = settlement_sessions(first_day, today_ny)        # covers every trade being settled
+    repair_settlements(db, now)
+    for r in history:
         qty = _num(r.get("cntg_dqty"))
         if qty <= 0:
             continue

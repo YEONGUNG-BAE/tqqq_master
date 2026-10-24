@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS tax_external_deposits(
   status TEXT NOT NULL, matched_ref TEXT UNIQUE, created TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS tax_issues(
   issue_key TEXT PRIMARY KEY, kind TEXT NOT NULL, detail TEXT NOT NULL, at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS tax_deadlines(
+  year INTEGER PRIMARY KEY, deadline TEXT NOT NULL, set_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS tax_moves(
   seq INTEGER PRIMARY KEY AUTOINCREMENT, year INTEGER NOT NULL, at TEXT NOT NULL, from_state TEXT NOT NULL,
   to_state TEXT NOT NULL, amount TEXT NOT NULL, currency TEXT NOT NULL, ref TEXT);
@@ -86,8 +88,14 @@ class TaxPlan:
     def __init__(self, db, settings_raw, estimate_fn, rate_fn=None):
         self.db = db
         raw = settings_raw or {}
-        self.deadline = raw.get("payment_deadline")                    # user setting, may be None
-        self.deadline_verified = bool(raw.get("payment_deadline_verified", False))
+        # Deadlines are per tax year. The legacy single `payment_deadline` applies
+        # only to the tax year it belongs to (deadline year - 1), never to others.
+        self.deadlines_cfg = raw.get("payment_deadlines") or {}
+        self.legacy_deadline = raw.get("payment_deadline")
+        self.legacy_verified = bool(raw.get("payment_deadline_verified", False))
+        # Calendar days before the deadline for the final installment. This is a
+        # conservative margin, NOT a guarantee of business days for settlement,
+        # FX or withdrawal (those are unverified on the real account).
         self.buffer_days = int(raw.get("settlement_buffer_days", 7))
         self.round_day = int(raw.get("installment_day", 15))
         self.estimate_fn = estimate_fn
@@ -123,20 +131,54 @@ class TaxPlan:
 
     # ---- schedule ----
 
-    @staticmethod
-    def due_year(now):
-        """The tax year being prepared: January-May prepare the previous year."""
-        local = now.astimezone(_KST())
-        return local.year - 1 if local.month <= 5 else None
+    def deadline_for(self, year):
+        """{'date', 'verified', 'source'} for this tax year only, or None."""
+        entry = self.deadlines_cfg.get(str(year))
+        if entry:
+            entry = entry if isinstance(entry, dict) else {"date": entry}
+            return {"date": entry["date"], "verified": bool(entry.get("verified", False)), "source": "config"}
+        if self.legacy_deadline and date.fromisoformat(self.legacy_deadline).year == int(year) + 1:
+            return {"date": self.legacy_deadline, "verified": self.legacy_verified, "source": "config (legacy)"}
+        row = self.db.execute("SELECT deadline FROM tax_deadlines WHERE year=?", (int(year),)).fetchone()
+        if row:
+            return {"date": row[0], "verified": False, "source": "user input"}
+        return None
+
+    def set_deadline(self, year, deadline, now):
+        deadline = date.fromisoformat(str(deadline)).isoformat()
+        self.db.execute("INSERT OR REPLACE INTO tax_deadlines VALUES (?,?,?)", (int(year), deadline, now.isoformat()))
+
+    def active_years(self, now):
+        """Tax years still being prepared or owed, oldest first. A year stays
+        active while its estimate exceeds what is paid and it is not released:
+        the previous year always during January-May, and any of the last two
+        years once it has activity (money moved) or a deadline. Reaching June
+        never drops an unpaid year or swaps it for the current one."""
+        local = now.astimezone(_KST()).date()
+        years = []
+        for year in (local.year - 2, local.year - 1):
+            row = self._row(year)
+            if row["released"]:
+                continue
+            if D(self.estimate_fn(year)["estimated_tax_krw"]) - row["paid_krw"] <= 0:
+                continue
+            prep = year == local.year - 1 and local.month <= 5
+            activity = (self.db.execute("SELECT 1 FROM tax_moves WHERE year=? LIMIT 1", (year,)).fetchone()
+                        or self.deadline_for(year) is not None)
+            if prep or activity:
+                years.append(year)
+        return years
 
     def rounds(self, year):
-        """Installment dates: the 15th of January-April, then the final date that
-        leaves `settlement_buffer_days` before the payment deadline. Without a
-        configured deadline the final round is May 15 and marked unverified."""
+        """Installment dates: the 15th of January-April of the following year,
+        then the final date: May 15, or `settlement_buffer_days` calendar days
+        before THIS year's deadline if earlier. Without a deadline for this year
+        the final round is May 15 and the deadline is shown as unset."""
         dates = [date(year + 1, m, self.round_day) for m in (1, 2, 3, 4)]
         final = date(year + 1, 5, self.round_day)
-        if self.deadline:
-            final = min(final, date.fromisoformat(self.deadline) - timedelta(days=self.buffer_days))
+        deadline = self.deadline_for(year)
+        if deadline:
+            final = min(final, date.fromisoformat(deadline["date"]) - timedelta(days=self.buffer_days))
         dates = [d for d in dates if d < final] + [final]
         return dates
 
@@ -290,8 +332,9 @@ class TaxPlan:
                 "in_progress_krw": progress["krw"], "external": external, "shortfall": shortfall,
                 "account_need": account_need, "installment_target": target, "installment_due": due_now,
                 "next_round": upcoming[0].isoformat() if upcoming else None,
-                "final_round": rounds[-1].isoformat(), "deadline": self.deadline,
-                "deadline_verified": self.deadline_verified, "cap": cap,
+                "final_round": rounds[-1].isoformat(),
+                "deadline": (self.deadline_for(year) or {}).get("date"),
+                "deadline_verified": bool((self.deadline_for(year) or {}).get("verified")), "cap": cap,
                 "sold_for_tax": row["sold_for_tax_krw"], "released": row["released"]}
 
     # ---- securing money ----

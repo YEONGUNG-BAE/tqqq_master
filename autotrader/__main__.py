@@ -131,7 +131,7 @@ def after_success(journal, notifier, result, signal, session, now):
         journal.put_meta("heartbeat_day", day)
 
 
-def tax_notices(journal, notifier, settings, now):
+def tax_notices(journal, notifier, settings, now, estimate_fn):
     """December estimate; January recalculation after year-end trades settle."""
     local = now.astimezone(KST)
     if local.month == 12:
@@ -144,7 +144,7 @@ def tax_notices(journal, notifier, settings, now):
         return
     if journal.meta("tax_notice:" + code):
         return
-    est = tax.estimate(journal.db, settings, year, holdings=journal.meta("last_positions"))
+    est = estimate_fn(year)
     message += " 자료 상태: " + ("확정 가능" if est["complete"] else "추정") + (
         ", 이 계좌만의 추정" if est["this_account_only"] else "")
     notifier.send("tax", code, message, now, amounts=[
@@ -159,8 +159,16 @@ def make_plan(journal, cfg, now):
     settings = tax.TaxSettings.from_config(cfg.get("tax"))
     tax.ensure_schema(journal.db)
 
+    def holdings():
+        """Engine's latest account snapshot if at most 2 days old, else None
+        (not checked). Older journals stored the bare mapping without a time."""
+        snap = journal.meta("last_positions")
+        if not isinstance(snap, dict) or "at" not in snap:
+            return None
+        return snap["positions"] if now - datetime.fromisoformat(snap["at"]) <= timedelta(days=2) else None
+
     def estimate(year):
-        return tax.estimate(journal.db, settings, year, holdings=journal.meta("last_positions"))
+        return tax.estimate(journal.db, settings, year, holdings=holdings(), sync=journal.meta("tax_sync"), now=now)
 
     def rate():
         info = journal.meta("last_usd_rate") or {}
@@ -180,9 +188,11 @@ def make_plan(journal, cfg, now):
 
 
 def plan_notices(journal, notifier, plan, now):
-    year = TaxPlan.due_year(now)
-    if year is None:
-        return
+    for year in plan.active_years(now):
+        year_notices(journal, notifier, plan, year, now)
+
+
+def year_notices(journal, notifier, plan, year, now):
     st = plan.status(year, now)
     deadline = (st["deadline"] or "미설정") + ("" if st["deadline_verified"] else " (미검증)")
     remaining = st["account_need"] - st["paid"] - st["withdrawn"]
@@ -240,10 +250,10 @@ def housekeeping(journal, notifier, cfg, broker, schedule, now):
                                               "error": str(exc) if isinstance(exc, Stop) else type(exc).__name__})
     lines, line_now = telegram_bot.plan_lines(plan)
     line_now[0] = now
-    for step in (lambda: tax_notices(journal, notifier, settings, now),
+    for step in (lambda: tax_notices(journal, notifier, settings, now, plan.estimate_fn),
                  lambda: plan_notices(journal, notifier, plan, now),
                  lambda: telegram_bot.poll(journal, settings, now, extra_lines=lines,
-                                           handlers=telegram_bot.plan_handlers(plan))
+                                           handlers=telegram_bot.plan_handlers(plan), estimate_fn=plan.estimate_fn)
                  if cfg.get("notifications", True) else 0):
         try:
             step()
@@ -523,14 +533,15 @@ def tax_command(args):
         settings = tax.TaxSettings.from_config(cfg.get("tax"))
         now = datetime.now(timezone.utc)
         years = [now.year] if now.month > 5 else [now.year - 1, now.year]
-        report = {str(y): tax.estimate(journal.db, settings, y, holdings=journal.meta("last_positions"))
-                  for y in years}
         _, plan, blockers = make_plan(journal, cfg, now)
-        plan_year = TaxPlan.due_year(now) or now.astimezone(KST).year
-        status = plan.status(plan_year, now)
-        status.pop("estimate", None)
-        output({"estimates": report, "plan": status, "tax_sell_blockers": blockers(plan_year),
-                "sync": journal.meta("tax_sync")})
+        report = {str(y): plan.estimate_fn(y) for y in years}
+        active = plan.active_years(now)
+        plans = {}
+        for year in active or [now.astimezone(KST).year]:
+            status = plan.status(year, now)
+            status.pop("estimate", None)
+            plans[str(year)] = dict(status, tax_sell_blockers=blockers(year))
+        output({"estimates": report, "active_years": active, "plans": plans, "sync": journal.meta("tax_sync")})
     finally:
         journal.db.close()
     return 0
@@ -580,7 +591,8 @@ def telegram_command(args):
             lines, line_now = telegram_bot.plan_lines(plan)
             line_now[0] = now
             output({"processed": telegram_bot.process(journal, updates, settings, now, extra_lines=lines,
-                                                      handlers=telegram_bot.plan_handlers(plan))})
+                                                      handlers=telegram_bot.plan_handlers(plan),
+                                                      estimate_fn=plan.estimate_fn)})
     finally:
         journal.db.close()
     return 0

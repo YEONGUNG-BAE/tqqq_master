@@ -51,13 +51,14 @@ def summarize_reasons(reasons):
     return [f"{label} {n}건" for label, n in counts.items()]
 
 
-def tax_report_lines(db, settings, now, extra=None):
-    """Body of /tax: estimates and verification status, plus plan lines from
-    later stages (reserve, external funds, schedule) when available."""
-    years = [now.year] if now.month > 5 else [now.year - 1, now.year]
+def tax_report_lines(db, settings, now, extra=None, estimate_fn=None, years=None):
+    """Body of /tax: estimates and verification status, plus plan lines.
+    `estimate_fn` must be the engine's own (same holdings and sync checks)."""
+    estimate_fn = estimate_fn or (lambda y: tax.estimate(db, settings, y, holdings=None, sync=None, now=now))
+    years = years or ([now.year] if now.month > 5 else [now.year - 1, now.year])
     lines = []
     for year in years:
-        est = tax.estimate(db, settings, year)
+        est = estimate_fn(year)
         status = "확정 가능 자료" if est["complete"] else "추정"
         lines.append(f"[{year}년 귀속] {status}" + (" · 이 계좌만의 추정" if est["this_account_only"] else ""))
         lines += render_amounts([("estimated_tax", est["estimated_tax_krw"]), ("account_net", est["account_net_krw"]),
@@ -78,24 +79,29 @@ def tax_report_lines(db, settings, now, extra=None):
     return lines
 
 
-HELP = ("명령\n/tax 세금 예상·준비 상황\n"
-        "/tax_external 금액 YYYY-MM-DD  외부 납부 재원 예정\n"
-        "/tax_secured 금액  외부 재원 실제 확보액\n"
-        "/tax_deposited 금액 YYYY-MM-DD  외부 재원 계좌 입금 예정(입출금 내역 확인 후 준비금)\n"
-        "/tax_withdraw 금액 YYYY-MM-DD  세금용 출금 등록(내역과 대조)\n"
+HELP = ("명령 (모든 상태 변경 명령 끝에 귀속연도를 붙일 수 있습니다. 준비 중인 연도가 둘 이상이거나 없으면 연도를 꼭 붙이세요)\n"
+        "/tax 세금 예상·준비 상황\n"
+        "/tax_external 금액 YYYY-MM-DD [연도]  외부 재원 계획 총액·예정일\n"
+        "/tax_secured 금액 [연도]  외부 재원 실제 확보액(계좌 밖, 미사용)\n"
+        "/tax_deposited 금액 YYYY-MM-DD [연도]  외부 재원 계좌 입금 예정(입출금 내역 확인 후 준비금)\n"
+        "/tax_withdraw 금액 YYYY-MM-DD [연도]  세금용 출금 등록(내역과 대조)\n"
         "/tax_withdraw_cancel 요청번호  세금용 출금 취소·재입금\n"
         "/tax_paid 금액 [출금|외부|기타] [연도]  납부 완료(출처가 모호하면 지정 요청)\n"
-        "/tax_paid_fix 총액  납부액 정정\n"
-        "/tax_release 확인  남은 준비금을 일반 현금으로\n"
-        "/tax_cap 금액  연간 세금 매도 상한\n/tax_early on|off  미래 회차 조기 확보\n"
+        "/tax_paid_fix 총액 [연도]  납부액 정정\n"
+        "/tax_release 확인 [연도]  남은 준비금을 일반 현금으로\n"
+        "/tax_cap 금액 [연도]  연간 세금 매도 상한\n/tax_early on|off [연도]  미래 회차 조기 확보\n"
+        "/tax_deadline YYYY-MM-DD [연도]  납부 기한(사용자 입력, 미검증)\n"
         "/help 이 안내\n주문·환전·잔고 조회 명령은 없습니다. 바뀐 계획은 다음 실행 주기에 반영됩니다.")
 
 
+
 class Context:
-    def __init__(self, db, settings, now, extra_lines=None, handlers=None):
+    def __init__(self, db, settings, now, extra_lines=None, handlers=None, estimate_fn=None, years=None):
         self.db, self.settings, self.now = db, settings, now
         self.extra_lines = extra_lines
         self.handlers = handlers or {}
+        self.estimate_fn = estimate_fn
+        self.years = years
 
 
 def handle(ctx, text):
@@ -104,7 +110,7 @@ def handle(ctx, text):
     parts = text.strip().split()
     command = parts[0].split("@")[0].lower() if parts else ""
     if command in ("/tax", "/세금"):
-        return "\n".join(tax_report_lines(ctx.db, ctx.settings, ctx.now, ctx.extra_lines))
+        return "\n".join(tax_report_lines(ctx.db, ctx.settings, ctx.now, ctx.extra_lines, ctx.estimate_fn, ctx.years))
     if command in ctx.handlers:
         return ctx.handlers[command](ctx, parts[1:])
     return HELP
@@ -148,7 +154,8 @@ def fetch(journal, transport=None):
     return sorted(response.get("result", []), key=lambda u: u.get("update_id", 0)) if response.get("ok") else []
 
 
-def process(journal, updates, settings, now, transport=None, *, chat_id=None, extra_lines=None, handlers=None):
+def process(journal, updates, settings, now, transport=None, *, chat_id=None, extra_lines=None, handlers=None,
+            estimate_fn=None, years=None):
     """Apply each update at most once across every process sharing the DB.
 
     Per update, in one IMMEDIATE transaction: re-check it is unprocessed, run
@@ -160,7 +167,7 @@ def process(journal, updates, settings, now, transport=None, *, chat_id=None, ex
     journal.db.execute(SCHEMA)
     journal.db.commit()
     tax.ensure_schema(journal.db)
-    ctx = Context(journal.db, settings, now, extra_lines, handlers)
+    ctx = Context(journal.db, settings, now, extra_lines, handlers, estimate_fn, years)
     applied = 0
     for update in updates:
         uid = int(update.get("update_id", 0))
@@ -200,20 +207,26 @@ def process(journal, updates, settings, now, transport=None, *, chat_id=None, ex
     return applied
 
 
-def poll(journal, settings, now, *, transport=None, chat_id=None, extra_lines=None, handlers=None):
+def poll(journal, settings, now, *, transport=None, chat_id=None, extra_lines=None, handlers=None,
+         estimate_fn=None, years=None):
     """fetch + process (used inside `run`, which already holds the state lock)."""
     transport = _transport(transport)
     if transport is None:
         return 0
     return process(journal, fetch(journal, transport), settings, now, transport, chat_id=chat_id,
-                   extra_lines=extra_lines, handlers=handlers)
+                   extra_lines=extra_lines, handlers=handlers, estimate_fn=estimate_fn, years=years)
 
 
 # ---- tax plan commands (stage 3) ----
 
 def plan_year(plan, now):
-    """Jan-May: the year being paid; otherwise the current year (paid next May)."""
-    return plan.due_year(now) or now.astimezone(_kst()).year
+    """The single active tax year, or None when there are none or several."""
+    active = plan.active_years(now)
+    return active[0] if len(active) == 1 else None
+
+
+class YearNeeded(Exception):
+    pass
 
 
 def _kst():
@@ -251,14 +264,21 @@ def plan_lines(plan):
 
 
 def plan_handlers(plan):
-    def year_of(ctx):
-        return plan_year(plan, ctx.now)
+    def year_of(ctx, planning=True):
+        """Default tax year. Several open years, or a money command with no open
+        year, is ambiguous: the user must name the year."""
+        active = plan.active_years(ctx.now)
+        if len(active) == 1:
+            return active[0]
+        if not active and planning:
+            return ctx.now.astimezone(_kst()).year       # planning for next May's payment
+        raise YearNeeded()
 
-    def take_year(args, ctx):
+    def take_year(args, ctx, planning=True):
         """An explicit 4-digit tax year anywhere in the arguments wins."""
         years = [a for a in args if a.isdigit() and len(a) == 4 and 2000 <= int(a) <= 2100]
         rest = [a for a in args if a not in years]
-        return rest, (int(years[0]) if years else year_of(ctx))
+        return rest, (int(years[0]) if years else year_of(ctx, planning))
 
     def ack(ctx, what, year):
         st = plan.status(year, ctx.now)
@@ -270,18 +290,20 @@ def plan_handlers(plan):
         return f"형식이 맞지 않습니다. /help 에서 {name} 형식을 확인하세요."
 
     def external(ctx, args):
-        amount, day = (parse_amount(args[0]) if args else None), (_date(args[1]) if len(args) > 1 else None)
+        rest, year = take_year(args, ctx)
+        amount, day = (parse_amount(rest[0]) if rest else None), (_date(rest[1]) if len(rest) > 1 else None)
         if amount is None or day is None:
             return usage("/tax_external")
-        plan.set_external(year_of(ctx), amount, day, ctx.now)
-        return ack(ctx, "외부 재원 예정", year_of(ctx))
+        plan.set_external(year, amount, day, ctx.now)
+        return ack(ctx, "외부 재원 계획 총액·예정일", year)
 
     def secured(ctx, args):
-        amount = parse_amount(args[0]) if args else None
+        rest, year = take_year(args, ctx)
+        amount = parse_amount(rest[0]) if rest else None
         if amount is None:
             return usage("/tax_secured")
-        plan.set_external_secured(year_of(ctx), amount, ctx.now)
-        return ack(ctx, "외부 재원 확보액", year_of(ctx))
+        plan.set_external_secured(year, amount, ctx.now)
+        return ack(ctx, "외부 재원 확보액(계좌 밖, 미사용)", year)
 
     def deposited(ctx, args):
         rest, year = take_year(args, ctx)
@@ -295,20 +317,22 @@ def plan_handlers(plan):
         return ack(ctx, f"외부 재원 입금 예정 등록(요청번호 {rid}). 입출금 내역에서 확인되면 준비금으로 옮깁니다", year)
 
     def withdraw(ctx, args):
-        amount, day = (parse_amount(args[0]) if args else None), (_date(args[1]) if len(args) > 1 else None)
+        rest, year = take_year(args, ctx, planning=False)
+        amount, day = (parse_amount(rest[0]) if rest else None), (_date(rest[1]) if len(rest) > 1 else None)
         if amount is None or day is None:
             return usage("/tax_withdraw")
-        rid = plan.request_withdrawal(year_of(ctx), amount, day, ctx.now)
-        return ack(ctx, f"세금용 출금 등록(요청번호 {rid}, 출금 내역과 대조 후 반영)", year_of(ctx))
+        rid = plan.request_withdrawal(year, amount, day, ctx.now)
+        return ack(ctx, f"세금용 출금 등록(요청번호 {rid}, 출금 내역과 대조 후 반영)", year)
 
     def withdraw_cancel(ctx, args):
         rid = args[0] if args and args[0].isalnum() and len(args[0]) <= 16 else None
-        if rid is None or not plan.cancel_withdrawal(rid, ctx.now):
+        row = ctx.db.execute("SELECT year FROM tax_withdrawals WHERE request_id=?", (rid,)).fetchone() if rid else None
+        if row is None or not plan.cancel_withdrawal(rid, ctx.now):
             return "해당 출금 요청을 찾지 못했습니다."
-        return ack(ctx, "세금용 출금 취소·재입금", year_of(ctx))
+        return ack(ctx, "세금용 출금 취소·재입금", row[0])
 
     def paid(ctx, args):
-        rest, year = take_year(args, ctx)
+        rest, year = take_year(args, ctx, planning=False)
         sources = {"출금": "withdrawn", "외부": "external", "기타": "other"}
         source = next((sources[a] for a in rest if a in sources), None)
         rest = [a for a in rest if a not in sources]
@@ -324,31 +348,53 @@ def plan_handlers(plan):
         return ack(ctx, f"납부 완료({label}에서)", year) + "\n남은 준비금은 /tax_release 확인 으로만 일반 현금으로 돌립니다."
 
     def paid_fix(ctx, args):
-        amount = parse_amount(args[0]) if args else None
+        rest, year = take_year(args, ctx, planning=False)
+        amount = parse_amount(rest[0]) if rest else None
         if amount is None:
             return usage("/tax_paid_fix")
-        plan.correct_payment(year_of(ctx), amount, ctx.now)
-        return ack(ctx, "납부액 정정(감소분을 자동 재투자하지 않음)", year_of(ctx))
+        plan.correct_payment(year, amount, ctx.now)
+        return ack(ctx, "납부액 정정(감소분을 자동 재투자하지 않음)", year)
 
     def release(ctx, args):
-        if args != ["확인"]:
-            return "남은 준비금을 일반 현금으로 돌리려면 /tax_release 확인 을 보내세요."
-        plan.release(year_of(ctx), ctx.now)
-        return ack(ctx, "준비금 해제", year_of(ctx))
+        rest, year = take_year(args, ctx, planning=False)
+        if rest != ["확인"]:
+            return "남은 준비금을 일반 현금으로 돌리려면 /tax_release 확인 [연도] 를 보내세요."
+        plan.release(year, ctx.now)
+        return ack(ctx, "준비금 해제", year)
 
     def cap(ctx, args):
-        amount = parse_amount(args[0]) if args else None
+        rest, year = take_year(args, ctx)
+        amount = parse_amount(rest[0]) if rest else None
         if amount is None:
             return usage("/tax_cap")
-        plan.set_cap(year_of(ctx), amount, "telegram user setting", "user", ctx.now)
-        return ack(ctx, "연간 세금 매도 상한(변경 이력 보관)", year_of(ctx))
+        plan.set_cap(year, amount, "telegram user setting", "user", ctx.now)
+        return ack(ctx, "연간 세금 매도 상한(변경 이력 보관)", year)
 
     def early(ctx, args):
-        if args not in (["on"], ["off"]):
+        rest, year = take_year(args, ctx)
+        if rest not in (["on"], ["off"]):
             return usage("/tax_early")
-        plan.set_early(year_of(ctx), args[0] == "on")
-        return ack(ctx, "조기 확보 " + ("켬" if args[0] == "on" else "끔"), year_of(ctx))
+        plan.set_early(year, rest[0] == "on")
+        return ack(ctx, "조기 확보 " + ("켬" if rest[0] == "on" else "끔"), year)
 
-    return {"/tax_external": external, "/tax_secured": secured, "/tax_deposited": deposited,
-            "/tax_withdraw": withdraw, "/tax_withdraw_cancel": withdraw_cancel, "/tax_paid": paid,
-            "/tax_paid_fix": paid_fix, "/tax_release": release, "/tax_cap": cap, "/tax_early": early}
+    def deadline(ctx, args):
+        rest, year = take_year(args, ctx)
+        day = _date(rest[0]) if rest else None
+        if day is None:
+            return usage("/tax_deadline")
+        plan.set_deadline(year, day, ctx.now)
+        return ack(ctx, f"{year}년 귀속 납부 기한 {day} (사용자 입력, 미검증)", year)
+
+    def guarded(fn):
+        def run(ctx, args):
+            try:
+                return fn(ctx, args)
+            except YearNeeded:
+                return ("대상 귀속연도가 모호합니다. 명령 끝에 연도를 붙여 다시 보내세요 (예: 2026). "
+                        "현재 준비 중인 연도: " + (", ".join(map(str, plan.active_years(ctx.now))) or "없음"))
+        return run
+    handlers = {"/tax_external": external, "/tax_secured": secured, "/tax_deposited": deposited,
+                "/tax_withdraw": withdraw, "/tax_withdraw_cancel": withdraw_cancel, "/tax_paid": paid,
+                "/tax_paid_fix": paid_fix, "/tax_release": release, "/tax_cap": cap, "/tax_early": early,
+                "/tax_deadline": deadline}
+    return {name: guarded(fn) for name, fn in handlers.items()}
