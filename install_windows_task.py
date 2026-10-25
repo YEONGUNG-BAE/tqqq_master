@@ -26,14 +26,16 @@ TASKS = {"logon": r"\tqqq\run-on-logon", "startup": r"\tqqq\run-at-startup"}
 
 
 def task_xml(kind, python, config, workdir, user):
-    trigger = ("<LogonTrigger><Enabled>true</Enabled><UserId>{user}</UserId><Delay>PT1M</Delay>{rep}</LogonTrigger>"
+    # Schema order: the base trigger elements (Enabled, Repetition) come
+    # before the trigger's own (UserId, Delay).
+    trigger = ("<LogonTrigger><Enabled>true</Enabled>{rep}<UserId>{user}</UserId><Delay>PT1M</Delay></LogonTrigger>"
                if kind == "logon" else
-               "<BootTrigger><Enabled>true</Enabled><Delay>PT2M</Delay>{rep}</BootTrigger>")
+               "<BootTrigger><Enabled>true</Enabled>{rep}<Delay>PT2M</Delay></BootTrigger>")
     repetition = "<Repetition><Interval>PT1M</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition>"
     logon_type = "InteractiveToken" if kind == "logon" else "Password"
     arguments = f'-m autotrader run --config "{config}"'
     return f"""<?xml version="1.0" encoding="UTF-16"?>
-<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+<Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
     <Description>TQQQ/SGOV automation: one short run per minute (generated; contains no secrets)</Description>
   </RegistrationInfo>

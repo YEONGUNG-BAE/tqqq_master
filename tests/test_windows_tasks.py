@@ -15,8 +15,66 @@ from test_doctor import SECRET_ENV
 ROOT = Path(__file__).resolve().parent.parent
 NS = {"t": "http://schemas.microsoft.com/windows/2004/02/mit/task"}
 
+# Content models of the Task Scheduler schema elements the generator writes,
+# taken from the Microsoft Learn schema reference (taskschd/taskschedulerschema-*):
+# "seq" = xs:sequence (order matters; triggers extend triggerBaseType, whose
+# elements come first), "all" = xs:all (any order, each at most once).
+TASK_SCHEMA = {
+    "Task": ("all", ["RegistrationInfo", "Triggers", "Settings", "Data", "Principals", "Actions"], ["Actions"]),
+    "LogonTrigger": ("seq", ["Enabled", "StartBoundary", "EndBoundary", "Repetition", "ExecutionTimeLimit",
+                             "UserId", "Delay"], []),
+    "BootTrigger": ("seq", ["Enabled", "StartBoundary", "EndBoundary", "Repetition", "ExecutionTimeLimit",
+                            "Delay"], []),
+    "Repetition": ("all", ["Interval", "Duration", "StopAtDurationEnd"], ["Interval"]),
+    "Principal": ("all", ["UserId", "LogonType", "GroupId", "DisplayName", "RunLevel", "ProcessTokenSidType",
+                          "RequiredPrivileges"], []),
+    "Settings": ("all", ["AllowStartOnDemand", "RestartOnFailure", "MultipleInstancesPolicy",
+                         "DisallowStartIfOnBatteries", "StopIfGoingOnBatteries", "AllowHardTerminate",
+                         "StartWhenAvailable", "NetworkProfileName", "RunOnlyIfNetworkAvailable", "WakeToRun",
+                         "Enabled", "Hidden", "DeleteExpiredTaskAfter", "IdleSettings", "NetworkSettings",
+                         "ExecutionTimeLimit", "Priority", "RunOnlyIfIdle", "UseUnifiedSchedulingEngine",
+                         "DisallowStartOnRemoteAppSession"], []),
+    "Exec": ("all", ["Command", "Arguments", "WorkingDirectory"], ["Command"]),
+}
+
+
+def schema_errors(element):
+    """Order/membership errors against TASK_SCHEMA, for this element and below."""
+    errors = []
+    name = element.tag.split("}")[-1]
+    children = [c.tag.split("}")[-1] for c in element]
+    if name in TASK_SCHEMA:
+        model, allowed, required = TASK_SCHEMA[name]
+        for child in children:
+            if child not in allowed:
+                errors.append(f"{name}: unexpected {child}")
+        if len(set(children)) != len(children):
+            errors.append(f"{name}: repeated child")
+        if model == "seq":
+            positions = [allowed.index(c) for c in children if c in allowed]
+            if positions != sorted(positions):
+                errors.append(f"{name}: order {children}")
+        errors += [f"{name}: missing {r}" for r in required if r not in children]
+    for child in element:
+        errors += schema_errors(child)
+    return errors
+
 
 class GeneratorTests(unittest.TestCase):
+    def test_generated_files_follow_the_schema_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.generate(Path(tmp))
+            for kind in ("logon", "startup"):
+                task = ET.fromstring((Path(tmp) / f"tqqq-task-{kind}.xml").read_text(encoding="utf-16"))
+                self.assertEqual(schema_errors(task), [], kind)
+                self.assertEqual(task.get("version"), "1.3")             # the documented schema's fixed value
+
+    def test_the_schema_check_rejects_the_previous_order(self):
+        bad = ET.fromstring("<LogonTrigger><Enabled>true</Enabled><UserId>u</UserId><Delay>PT1M</Delay>"
+                            "<Repetition><Interval>PT1M</Interval></Repetition></LogonTrigger>")
+        self.assertTrue(schema_errors(bad))
+        self.assertTrue(schema_errors(ET.fromstring("<Exec><Arguments>x</Arguments></Exec>")))
+
     def generate(self, root, env=None):
         python = r"C:\Users\아버지\tqqq auto\.venv\Scripts\python.exe"
         config = r"C:\Users\아버지\tqqq auto\config.json"
