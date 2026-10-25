@@ -6,7 +6,6 @@ and token issue are per installation and safe across real processes."""
 import io
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -89,22 +88,22 @@ class BindingTests(Base):
         event = self.journal.db.execute("SELECT body FROM events WHERE category='account_relinked'").fetchone()
         self.assertEqual(json.loads(event[0])["previous"], "a" * 16)
 
-    def test_an_existing_journal_copy_keeps_working(self):
-        src = ROOT.parent / "tqqq_auto" / "state_observe" / "journal.sqlite"
-        if not src.exists():
-            self.skipTest("no local state journal")
-        before = src.read_bytes()
-        copy = self.dir / "copy.sqlite"
-        shutil.copy2(src, copy)
-        j = Journal(copy)
+    def test_a_journal_from_before_bindings_keeps_working(self):
+        # Built here, never copied from a user's state folder: older versions
+        # stored only broker_key_fingerprint next to their records.
+        path = self.dir / "older.sqlite"
+        old = Journal(path)
+        old.put_meta("broker_key_fingerprint", MY_FP)
+        old.create("order", {"symbol": "TQQQ"}, NOW, "2026-10-23", status="done")
+        old.db.close()
+        j = Journal(path)
         try:
-            stored = j.meta("broker_key_fingerprint")
-            self.assertTrue(stored)
-            account.bind(j, stored, None, NOW)                 # its own key: unchanged behaviour
-            self.assertEqual(j.meta("account_binding")["source"], "key fingerprint already in the journal")
+            self.assertEqual(account.bind(j, MY_FP, None, NOW)["source"], "key fingerprint already in the journal")
+            self.assertEqual(j.db.execute("SELECT count(*) FROM actions").fetchone()[0], 1)
+            with self.assertRaisesRegex(Stop, "different API key"):
+                account.bind(j, "f" * 64, None, NOW)
         finally:
             j.db.close()
-        self.assertEqual(src.read_bytes(), before)
 
 
 class AliasTests(Base):

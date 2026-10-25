@@ -204,7 +204,9 @@ def _windows_tasks(runner):
         code, text = runner(["schtasks", "/Query", "/TN", name, "/FO", "LIST", "/V"])
         status = None
         for line in (text or "").splitlines():
-            if line.strip().lower().startswith(("status:", "scheduled task state:")):
+            # Labels are localized (Korean Windows: 상태 / 예약된 작업 상태); the
+            # exit code alone decides "registered".
+            if line.strip().lower().startswith(("status:", "scheduled task state:", "상태:", "예약된 작업 상태:")):
                 status = (status + "; " if status else "") + line.split(":", 1)[1].strip()
         out[kind] = {"registered": code == 0, "status": status,
                      "starts": "after this user logs on" if kind == "logon"
