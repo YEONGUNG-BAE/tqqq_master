@@ -725,24 +725,22 @@ class GeneralRunUnchangedTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             Settings(migrate_symbols=("NDQX",))                                  # not an ignore list
 
-    def test_schema_is_added_to_a_copy_of_an_existing_journal_without_touching_other_tables(self):
-        src = ROOT / "state_observe" / "journal.sqlite"
-        if not src.exists():
-            self.skipTest("no local state journal")
+    def test_schema_is_added_to_an_existing_journal_without_touching_other_tables(self):
+        # Built here as older versions left it (records, no live_checks table);
+        # never copied from a user's state folder.
         with tempfile.TemporaryDirectory() as tmp:
-            import shutil
-            dst = Path(tmp) / "copy.sqlite"
-            shutil.copy2(src, dst)
-            j = Journal(dst)
+            j = Journal(Path(tmp) / "older.sqlite")
             try:
-                before = j.db.execute("SELECT count(*) FROM actions").fetchone()[0]
+                j.create("order", {"symbol": RISK_SYMBOL}, OPEN, "2026-10-15", status="done")
+                j.db.execute("DROP TABLE IF EXISTS live_checks")
+                j.db.commit()
+                before = j.db.execute("SELECT * FROM actions").fetchall()
                 livecheck.ensure_schema(j.db)
                 livecheck.ensure_schema(j.db)
-                self.assertEqual(j.db.execute("SELECT count(*) FROM actions").fetchone()[0], before)
+                self.assertEqual(j.db.execute("SELECT * FROM actions").fetchall(), before)
                 self.assertIsNone(livecheck.blocking(j))
             finally:
                 j.db.close()
-
 
 if __name__ == "__main__":
     unittest.main()

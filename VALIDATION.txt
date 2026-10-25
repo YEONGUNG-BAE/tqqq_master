@@ -1,9 +1,28 @@
-# 검증 출력 — 2026-10-25 11:53 KST, macOS Darwin 25.5.0
+# 검증 출력 — 2026-10-25 18:00 KST, macOS Darwin 25.5.0 (Windows에서는 실행하지 않음)
 # Python 3.14.5 | exchange-calendars 4.12 | pandas 2.3.3 | NumPy 2.5.4
 # 명령: .venv/bin/python -m unittest discover -s tests -v
 # exchange-calendars의 NumPy DeprecationWarning은 알려진 경고이며 결과에 영향 없음
 # 공식 포털 명세(vendor/meritz-portal-20261015.json)를 받아 둔 상태의 결과. 없으면 명세 대조 3개가 건너뜀
 
+test_account_show_reports_scope_without_secrets (test_accounts.AliasTests.test_account_show_reports_scope_without_secrets) ... ok
+test_aliases_are_names_never_numbers (test_accounts.AliasTests.test_aliases_are_names_never_numbers) ... ok
+test_notifications_and_status_name_the_installation (test_accounts.AliasTests.test_notifications_and_status_name_the_installation) ... <project>/.venv/lib/python3.14/site-packages/exchange_calendars/exchange_calendar.py:65: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  ONE_HOUR = pd.Timedelta("1h")
+<project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+ok
+test_a_config_for_another_account_is_refused_before_any_request (test_accounts.BindingTests.test_a_config_for_another_account_is_refused_before_any_request) ... ok
+test_a_journal_from_before_bindings_keeps_working (test_accounts.BindingTests.test_a_journal_from_before_bindings_keeps_working) ... ok
+test_a_journal_of_another_key_is_refused (test_accounts.BindingTests.test_a_journal_of_another_key_is_refused) ... ok
+test_a_new_journal_binds_and_the_matching_config_passes (test_accounts.BindingTests.test_a_new_journal_binds_and_the_matching_config_passes) ... ok
+test_records_without_a_binding_are_never_adopted_silently (test_accounts.BindingTests.test_records_without_a_binding_are_never_adopted_silently) ... ok
+test_relink_is_a_user_statement_audited_and_refused_while_a_request_is_open (test_accounts.BindingTests.test_relink_is_a_user_statement_audited_and_refused_while_a_request_is_open) ... ok
+test_concurrent_token_issue_in_two_processes_issues_once (test_accounts.ProcessTests.test_concurrent_token_issue_in_two_processes_issues_once) ... ok
+test_two_installations_with_different_keys_never_lock_each_other (test_accounts.ProcessTests.test_two_installations_with_different_keys_never_lock_each_other) ... ok
 test_a_payment_from_secured_external_money_consumes_it (test_audit_b.ExternalFundsTests.test_a_payment_from_secured_external_money_consumes_it) ... ok
 test_b_deposit_before_the_planned_date_is_counted_once (test_audit_b.ExternalFundsTests.test_b_deposit_before_the_planned_date_is_counted_once) ... ok
 test_deposit_matched_twice_or_redelivered_moves_once (test_audit_b.ExternalFundsTests.test_deposit_matched_twice_or_redelivered_moves_once) ... ok
@@ -19,9 +38,7 @@ test_strategy_switch_still_runs_while_tax_data_is_incomplete (test_audit_c.Ledge
 test_symbol_only_in_the_account_and_a_normal_empty_account (test_audit_c.LedgerCompletenessTests.test_symbol_only_in_the_account_and_a_normal_empty_account) ... ok
 test_symbol_only_in_the_ledger_is_compared_as_zero_held (test_audit_c.LedgerCompletenessTests.test_symbol_only_in_the_ledger_is_compared_as_zero_held) ... ok
 test_tax_reply_uses_the_engine_holdings_and_completeness (test_audit_c.LedgerCompletenessTests.test_tax_reply_uses_the_engine_holdings_and_completeness) ... ok
-test_settlement_cycle_follows_the_era_around_the_t1_switch (test_audit_c.SettlementTests.test_settlement_cycle_follows_the_era_around_the_t1_switch) ... <project>/.venv/lib/python3.14/site-packages/exchange_calendars/exchange_calendar.py:65: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
-  ONE_HOUR = pd.Timedelta("1h")
-<project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+test_settlement_cycle_follows_the_era_around_the_t1_switch (test_audit_c.SettlementTests.test_settlement_cycle_follows_the_era_around_the_t1_switch) ... <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
   delta = pd.Timedelta(
 <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
   delta = pd.Timedelta(
@@ -31,8 +48,6 @@ test_settlement_cycle_follows_the_era_around_the_t1_switch (test_audit_c.Settlem
   delta = pd.Timedelta(
 ok
 test_trade_before_the_calendar_gets_no_made_up_settlement_date (test_audit_c.SettlementTests.test_trade_before_the_calendar_gets_no_made_up_settlement_date) ... <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
-  delta = pd.Timedelta(
-<project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
   delta = pd.Timedelta(
 <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
   delta = pd.Timedelta(
@@ -99,11 +114,11 @@ test_healthy_plan_baseline (test_audit_f.CliTests.test_healthy_plan_baseline) ..
   delta = pd.Timedelta(
 <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
   delta = pd.Timedelta(
-/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c23ee30>
+ok
+test_tax_plan_failure_still_runs_the_engine_and_ends_as_a_hold (test_audit_f.CliTests.test_tax_plan_failure_still_runs_the_engine_and_ends_as_a_hold) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10cd9bf10>
   d = dict(zip(self.fieldnames, row))
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
-test_tax_plan_failure_still_runs_the_engine_and_ends_as_a_hold (test_audit_f.CliTests.test_tax_plan_failure_still_runs_the_engine_and_ends_as_a_hold) ... ok
 test_tax_plan_failure_under_a_lock_stays_a_lock (test_audit_f.CliTests.test_tax_plan_failure_under_a_lock_stays_a_lock) ... ok
 test_confirmed_tqqq_exit_sell_goes_out_and_the_buy_is_held (test_audit_f.EngineTests.test_confirmed_tqqq_exit_sell_goes_out_and_the_buy_is_held) ... ok
 test_intraday_recovery_sells_the_risk_symbol_but_holds_the_buy (test_audit_f.EngineTests.test_intraday_recovery_sells_the_risk_symbol_but_holds_the_buy) ... ok
@@ -187,11 +202,11 @@ test_lost_order_reply_then_token_expiry_recovers_without_resend (test_fault_inje
 test_token_refusal_is_explicit_and_post_token_error_is_not_resent (test_fault_injection.AuthAndTokenTests.test_token_refusal_is_explicit_and_post_token_error_is_not_resent) ... ok
 test_repeated_token_refusal_locks_and_unlock_resumes (test_fault_injection.CliAuthLockTests.test_repeated_token_refusal_locks_and_unlock_resumes) ... ok
 test_overlapping_scheduler_or_second_state_folder_does_nothing (test_fault_injection.CliConcurrencyTests.test_overlapping_scheduler_or_second_state_folder_does_nothing) ... ok
-test_corrupt_state_database_blocks_every_request (test_fault_injection.CliStateAndNotificationTests.test_corrupt_state_database_blocks_every_request) ... ok
-test_daily_close_outage_still_reaches_the_engine (test_fault_injection.CliStateAndNotificationTests.test_daily_close_outage_still_reaches_the_engine) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c23dd50>
+test_corrupt_state_database_blocks_every_request (test_fault_injection.CliStateAndNotificationTests.test_corrupt_state_database_blocks_every_request) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10cd9b5b0>
   def __init__(self, name, parent):
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
+test_daily_close_outage_still_reaches_the_engine (test_fault_injection.CliStateAndNotificationTests.test_daily_close_outage_still_reaches_the_engine) ... ok
 test_failed_heartbeat_reaches_telegram_on_the_next_run (test_fault_injection.CliStateAndNotificationTests.test_failed_heartbeat_reaches_telegram_on_the_next_run) ... ok
 test_hold_then_automatic_recovery_is_notified_once_each (test_fault_injection.CliStateAndNotificationTests.test_hold_then_automatic_recovery_is_notified_once_each) ... ok
 test_notification_failure_changes_nothing (test_fault_injection.CliStateAndNotificationTests.test_notification_failure_changes_nothing) ... ok
@@ -305,7 +320,7 @@ test_outside_window_reservations_and_bad_quotes_send_nothing (test_livecheck.Gat
 test_sell_only_blocks_the_buy_but_not_the_check_sell (test_livecheck.GateTests.test_sell_only_blocks_the_buy_but_not_the_check_sell) ... ok
 test_window_closing_during_the_send_wait_sends_nothing (test_livecheck.GateTests.test_window_closing_during_the_send_wait_sends_nothing) ... ok
 test_non_strategy_holdings_still_stop_the_general_engine_and_migrate_keeps_its_meaning (test_livecheck.GeneralRunUnchangedTests.test_non_strategy_holdings_still_stop_the_general_engine_and_migrate_keeps_its_meaning) ... ok
-test_schema_is_added_to_a_copy_of_an_existing_journal_without_touching_other_tables (test_livecheck.GeneralRunUnchangedTests.test_schema_is_added_to_a_copy_of_an_existing_journal_without_touching_other_tables) ... ok
+test_schema_is_added_to_an_existing_journal_without_touching_other_tables (test_livecheck.GeneralRunUnchangedTests.test_schema_is_added_to_an_existing_journal_without_touching_other_tables) ... ok
 test_check_engine_refuses_while_a_general_request_is_unresolved (test_livecheck.IsolationTests.test_check_engine_refuses_while_a_general_request_is_unresolved) ... ok
 test_general_engine_ignores_owned_rows_and_owned_rows_feed_no_switch_or_tax_book (test_livecheck.IsolationTests.test_general_engine_ignores_owned_rows_and_owned_rows_feed_no_switch_or_tax_book) ... ok
 test_a_new_plan_supersedes_an_unstarted_one_and_only_one_can_run (test_livecheck.PlanTests.test_a_new_plan_supersedes_an_unstarted_one_and_only_one_can_run) ... ok
@@ -406,50 +421,58 @@ test_status_reads_installation_and_flags_two_loaded_services (test_operations.Se
 test_other_chats_get_nothing_and_acknowledgements_change_nothing (test_operations.TelegramStatusTests.test_other_chats_get_nothing_and_acknowledgements_change_nothing) ... ok
 test_read_only_pass_stops_at_the_first_plan_change (test_operations.TelegramStatusTests.test_read_only_pass_stops_at_the_first_plan_change) ... ok
 test_run_answers_status_while_another_process_holds_the_state_lock (test_operations.TelegramStatusTests.test_run_answers_status_while_another_process_holds_the_state_lock) ... ok
-test_stale_state_is_never_presented_as_current (test_operations.TelegramStatusTests.test_stale_state_is_never_presented_as_current) ... ok
-test_status_and_issues_answer_from_local_state_without_sensitive_figures (test_operations.TelegramStatusTests.test_status_and_issues_answer_from_local_state_without_sensitive_figures) ... ok
+test_stale_state_is_never_presented_as_current (test_operations.TelegramStatusTests.test_stale_state_is_never_presented_as_current) ... <project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10ce44220>
+  converted = ints_to_pydatetime(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_status_and_issues_answer_from_local_state_without_sensitive_figures (test_operations.TelegramStatusTests.test_status_and_issues_answer_from_local_state_without_sensitive_figures) ... <project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x109756020>
+  converted = ints_to_pydatetime(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10964d990>
+  converted = ints_to_pydatetime(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10964cf40>
+  converted = ints_to_pydatetime(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10964d120>
+  converted = ints_to_pydatetime(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10cd9b2e0>
+  converted = ints_to_pydatetime(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10cd9b880>
+  converted = ints_to_pydatetime(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10cd9b3d0>
+  converted = ints_to_pydatetime(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10cd9a7a0>
+  converted = ints_to_pydatetime(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10cd9b1f0>
+  converted = ints_to_pydatetime(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10cd9b6a0>
+  converted = ints_to_pydatetime(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
 test_housekeeping_still_answers_status_when_the_tax_plan_cannot_be_built (test_operations_fixes.ChatWithBrokenTaxPlanTests.test_housekeeping_still_answers_status_when_the_tax_plan_cannot_be_built) ... ok
-test_status_survives_a_broken_tax_schema (test_operations_fixes.ChatWithBrokenTaxPlanTests.test_status_survives_a_broken_tax_schema) ... <project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c342200>
-  converted = ints_to_pydatetime(
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-ok
-test_telegram_command_answers_when_make_plan_fails (test_operations_fixes.ChatWithBrokenTaxPlanTests.test_telegram_command_answers_when_make_plan_fails) ... <project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x108b56020>
-  converted = ints_to_pydatetime(
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x108a8d6c0>
-  converted = ints_to_pydatetime(
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x108a8c220>
-  converted = ints_to_pydatetime(
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x108a8e3e0>
-  converted = ints_to_pydatetime(
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c23de40>
-  converted = ints_to_pydatetime(
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c23f790>
-  converted = ints_to_pydatetime(
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c23fc40>
-  converted = ints_to_pydatetime(
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c23d990>
-  converted = ints_to_pydatetime(
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c23f6a0>
-  converted = ints_to_pydatetime(
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c23f3d0>
-  converted = ints_to_pydatetime(
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-ok
+test_status_survives_a_broken_tax_schema (test_operations_fixes.ChatWithBrokenTaxPlanTests.test_status_survives_a_broken_tax_schema) ... ok
+test_telegram_command_answers_when_make_plan_fails (test_operations_fixes.ChatWithBrokenTaxPlanTests.test_telegram_command_answers_when_make_plan_fails) ... ok
 test_a_copy_of_an_occurrence_resolved_later_still_says_so (test_operations_fixes.OccurrenceTests.test_a_copy_of_an_occurrence_resolved_later_still_says_so) ... ok
 test_a_recurrence_never_borrows_the_previous_resolution (test_operations_fixes.OccurrenceTests.test_a_recurrence_never_borrows_the_previous_resolution) ... ok
 test_a_recurrence_while_the_old_copy_is_still_pending_is_dated_by_the_new_occurrence (test_operations_fixes.OccurrenceTests.test_a_recurrence_while_the_old_copy_is_still_pending_is_dated_by_the_new_occurrence) ... ok
 test_mac_banner_alone_does_not_count_as_delivered (test_operations_fixes.RemoteDeliveryTests.test_mac_banner_alone_does_not_count_as_delivered) ... ok
 test_telegram_success_counts_as_delivered (test_operations_fixes.RemoteDeliveryTests.test_telegram_success_counts_as_delivered) ... ok
 test_without_any_remote_channel_the_monitor_is_not_silenced (test_operations_fixes.RemoteDeliveryTests.test_without_any_remote_channel_the_monitor_is_not_silenced) ... ok
+test_the_macos_banner_exists_only_on_macos (test_portability.ChannelTests.test_the_macos_banner_exists_only_on_macos) ... ok
+test_config_in_a_korean_path_with_spaces_from_another_working_directory (test_portability.PathTests.test_config_in_a_korean_path_with_spaces_from_another_working_directory) ... ok
+test_posix_mode_or_windows_acl_is_reported_not_assumed (test_portability.PermissionReportTests.test_posix_mode_or_windows_acl_is_reported_not_assumed) ... ok
+test_a_blocking_lock_waits_for_the_other_process (test_portability.ProcessLockTests.test_a_blocking_lock_waits_for_the_other_process) ... ok
+test_a_lock_held_by_another_process_refuses_and_its_death_releases_it (test_portability.ProcessLockTests.test_a_lock_held_by_another_process_refuses_and_its_death_releases_it) ... ok
+test_different_accounts_never_block_each_other (test_portability.ProcessLockTests.test_different_accounts_never_block_each_other) ... ok
+test_windows_branch_retries_a_target_held_open_then_raises_without_losing_the_old_file (test_portability.ReplaceTests.test_windows_branch_retries_a_target_held_open_then_raises_without_losing_the_old_file) ... ok
+test_results_do_not_depend_on_the_machine_time_zone (test_portability.TimeZoneTests.test_results_do_not_depend_on_the_machine_time_zone) ... ok
 test_pages_preserve_cursor_whitespace_and_request_all_records (test_recovery.AdapterRecoveryTests.test_pages_preserve_cursor_whitespace_and_request_all_records) ... ok
 test_prior_date_fully_filled_order_recovered_from_detail (test_recovery.AdapterRecoveryTests.test_prior_date_fully_filled_order_recovered_from_detail) ... ok
 test_prior_date_partial_is_not_assumed_cancelled (test_recovery.AdapterRecoveryTests.test_prior_date_partial_is_not_assumed_cancelled) ... ok
@@ -458,7 +481,10 @@ test_same_number_wrong_symbol_is_not_reconciled (test_recovery.AdapterRecoveryTe
 test_state_cannot_bind_to_different_api_key (test_recovery.AdapterRecoveryTests.test_state_cannot_bind_to_different_api_key) ... ok
 test_token_from_different_key_is_not_reused (test_recovery.AdapterRecoveryTests.test_token_from_different_key_is_not_reused) ... ok
 test_unknown_order_code_stops (test_recovery.AdapterRecoveryTests.test_unknown_order_code_stops) ... ok
-test_more_than_252_missing_sessions_are_all_replayed (test_recovery.HistoryGapTests.test_more_than_252_missing_sessions_are_all_replayed) ... ok
+test_more_than_252_missing_sessions_are_all_replayed (test_recovery.HistoryGapTests.test_more_than_252_missing_sessions_are_all_replayed) ... <project>/autotrader/history.py:89: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10cd9ae30>
+  writer.writerows(sorted(history.items()))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
 test_excess_fill_quantity_blocks_next_action (test_recovery.ManagementTests.test_excess_fill_quantity_blocks_next_action) ... ok
 test_manage_existing_order_after_new_order_window (test_recovery.ManagementTests.test_manage_existing_order_after_new_order_window) ... ok
 test_no_cancel_mutation_outside_market (test_recovery.ManagementTests.test_no_cancel_mutation_outside_market) ... ok
@@ -565,8 +591,12 @@ test_plan_commands_apply_once_even_if_redelivered (test_tax_reserve.TelegramPlan
 test_partial_payment_redeposit_and_correction (test_tax_reserve.WithdrawalTests.test_partial_payment_redeposit_and_correction) ... ok
 test_registered_withdrawal_moves_once_and_unrelated_ones_are_not_tax (test_tax_reserve.WithdrawalTests.test_registered_withdrawal_moves_once_and_unrelated_ones_are_not_tax) ... ok
 test_release_only_by_explicit_user_command (test_tax_reserve.WithdrawalTests.test_release_only_by_explicit_user_command) ... ok
+test_both_tasks_are_least_privilege_absolute_single_instance_without_secrets (test_windows_tasks.GeneratorTests.test_both_tasks_are_least_privilege_absolute_single_instance_without_secrets) ... ok
+test_relative_paths_are_refused (test_windows_tasks.GeneratorTests.test_relative_paths_are_refused) ... ok
+test_registration_is_read_from_schtasks_not_from_generated_files (test_windows_tasks.WindowsStatusTests.test_registration_is_read_from_schtasks_not_from_generated_files) ... ok
+test_two_registered_tasks_are_flagged (test_windows_tasks.WindowsStatusTests.test_two_registered_tasks_are_flagged) ... ok
 
 ----------------------------------------------------------------------
-Ran 461 tests in 15.122s
+Ran 484 tests in 21.060s
 
 OK

@@ -1,5 +1,52 @@
 # 진행 상황
 
+## macOS·Windows 공용 코드와 설치별 계좌 독립 (2026-10-25, 기준 4bff5c8, 브랜치 `windows-compat`)
+
+목표: 같은 코드로 Mac(사용자 계좌)과 Windows(아버지 계좌)가 각자 독립 운영한다. 기기 간 운용 인계, DB 동기화, 중앙 다계좌 운용은 하지 않는다. Mac 작업 폴더(main)는 바꾸지 않았고 별도 worktree에서 작업했다.
+
+**A. OS 의존부 정리** (`autotrader/oslock.py` 신설)
+- 프로세스 잠금은 POSIX `fcntl.flock`, Windows `msvcrt.locking`이다. 두 경우 모두 프로세스가 죽으면 OS가 푼다. 잠금을 생략하는 경로는 없다.
+- 실행 잠금 9곳, 토큰 잠금, 기록 교체(Windows는 대상이 열려 있으면 잠깐 재시도), 권한 설정을 모두 이 모듈로 옮겼다.
+- 계좌 잠금 기본 위치: Windows `%LOCALAPPDATA%\tqqq_auto\locks`, Mac `~/Library/Application Support/tqqq_auto/locks`
+- macOS 배너 알림은 macOS에서만 켠다. `tzdata`를 요구 패키지에 추가했다(Windows에는 시간대 DB가 없다).
+- `status`의 `cfg` 미정의 오류를 고쳤다. **main에도 같은 오류가 있다.** 임시 설정으로만 확인했고 main은 수정하지 않았다.
+
+**B. 설치별 계좌 독립** (`autotrader/account.py`, `account show|link|relink`)
+- 첫 증권사 요청 전에 두 가지를 확인한다.
+  1. 설정 `account.key_fingerprint`와 실제로 불러온 키
+  2. DB에 묶인 키와 실제로 불러온 키
+- 둘 중 하나라도 다르면 아무 요청도 보내지 않고 멈춘다.
+- 결속 규칙
+  - 빈 DB는 첫 사용 때 키에 묶는다.
+  - 기록은 있는데 결속이 없는 DB는 `account link --confirm` 없이 귀속하지 않는다.
+  - 기존 DB(키 지문 저장)는 그대로 동작한다.
+  - 같은 계좌의 키 재발급은 `account relink --confirm-same-account --note`로 바꾼다. 감사 이벤트가 남고, 진행 중인 요청이 있으면 거부한다.
+- 검증 범위: 메리츠 REST에는 계좌번호가 없으므로 "이 설치가 설정한 API 키를 쓴다"까지만 확인한다.
+- 별칭(`account.alias`)은 알림 제목과 `/status`·`/issues` 머리에 붙는다. 숫자 4자리 이상과 메일 주소는 거부한다.
+- 외부 감시에는 `instance_names`를 추가했다.
+
+**C. Windows 자동 실행·진단·안내**
+- `install_windows_task.py`는 작업 스케줄러 XML 2종을 UTF-16으로 생성만 한다(등록하지 않음).
+  - 로그인 후(InteractiveToken) 또는 부팅 시(등록 때 암호 저장)
+  - 공통: LeastPrivilege, IgnoreNew, StartWhenAvailable false, 1분 반복, 절대 경로
+- `service-status`가 Windows에서 `schtasks /Query`로 실제 등록 여부를 읽는다. 레이블은 지역화되므로 등록 여부는 종료 코드로만 판정한다.
+- icacls 권한 보고와 동기화 폴더 경고는 두 OS 공통이다.
+- README에 Windows 설치, 입력값, ACL, 등록·확인·해제 명령, 미검증 항목을 적었다.
+
+**D. 회귀 검증**
+- 이 Mac의 전체 테스트
+  - 공개본(명세 없음): 484개 통과, 명세 대조 3개 건너뜀
+  - 명세를 둔 임시 사본: 484개 통과, 건너뜀 0
+- 리플레이 비교: main과 이 브랜치에서 `self_irregular`·`father_monthly`·`child_lump_sum`·`demo`를 새 임시 상태로 돌렸다. 출력과 DB 전체 행(주문·체결·세무·이벤트·최종 모의 잔고)이 UUID와 실행 시각을 빼고 같았다. 3세션씩 15번 끊어 재시작한 결과도 한 번에 돌린 main 결과와 같았다.
+- 이전 코드가 만든 DB: 이 브랜치의 `status`가 정상 조회했다(main의 `status`는 위 오류로 실패). `tax` 결과는 둘이 같았다.
+- 사용자 상태 DB를 복사하던 테스트 2건은 이전 형식의 DB를 테스트 안에서 만들도록 바꿨다.
+- 변이 확인
+  - A·B 8종: 잠금 생략, 설정 지문 무시, 기록 있는 DB 자동 귀속, 진행 중 요청에서 relink, 숫자 별칭, 토큰 잠금 없음, 모든 OS 배너, 교체 재시도 없음
+  - C 8종: 등록 판정을 텍스트로, 최고 권한, 병렬 실행, 놓친 실행 몰아서, LogonType, 상대 경로, 동기화 경고, 둘 다 등록 경고
+  - 모두 테스트가 실패했다.
+- **Windows에서는 아무것도 실행하지 않았다.** `msvcrt` 잠금, icacls, schtasks 등록, Windows 시간대, Windows 전체 테스트는 미검증이다. sys.platform을 바꾼 테스트는 논리만 확인한다. 확인 절차는 README의 "Windows에서 아직 확인하지 않은 것"에 있다.
+- 실제 주문·환전·송금, live 전환, 서비스 등록, 원격 푸시는 하지 않았다.
+
 ## 동시 장애의 알림 재시도 간격 (2026-10-25, 기준 e55f0b3)
 
 - **문제:** 장애 A(0분 실패)와 B(10분 실패)가 함께 지속될 때, 31분 재전송 실패로 채널이 61분까지 대기하는데도 같은 실행의 A `send()`가 다시 전송했다. `_send()`가 사건별 전송 시각만 보고 채널별 재시도 시각(`channel_retry_at`)은 보지 않았다. 회귀 테스트로 재현했다(기대 3회, 실제 4회).
