@@ -1,5 +1,23 @@
 # 진행 상황
 
+## 잠금 테스트의 해제 타이밍 가정 보완 (2026-10-25, 기준 2cdab64, Windows 11 네이티브)
+
+- **문제:** Windows는 강제 종료된 프로세스의 `msvcrt` 잠금과 파일 핸들을 종료 직후가 아니라 조금 뒤에 정리한다(LockFileEx 문서: 시간은 시스템 자원에 따름. 12코어 부하에서 7~34ms 측정). 이 때문에 CPU 부하가 높으면 다음 두 테스트가 실패했다.
+  - `test_a_lock_held_by_another_process_refuses_and_its_death_releases_it`: `wait()` 직후 바로 다시 잠금. 부하 상태 30회 중 15회 실패
+  - `test_different_accounts_never_block_each_other`: 죽은 자식의 핸들이 남아 임시 폴더 삭제가 WinError 32. 부하 상태 반복 검증에서 새로 확인(유휴 0회)
+- **수정(테스트만):** 공용 함수 `kill_and_reacquire`를 추가했다. 자식을 강제 종료하고 `wait()`로 종료 코드를 확인한 뒤, 실제 비차단 잠금 획득을 10ms 간격으로 시도한다.
+  - `time.monotonic()` 기준 최대 2초(`RELEASE_LIMIT_SECONDS`)
+  - `Busy`만 재시도하고, 다른 오류는 바로 실패
+  - 제한 시간 안에 못 얻으면 테스트 실패
+  - 얻은 잠금은 `held()`가 블록 끝에서 해제
+  - 살아 있는 자식이 잠금을 쥔 동안 획득이 거부되는지 보는 검사는 그대로다. 운영 코드(`oslock.py` 등)는 바꾸지 않았다.
+- **반복 검증(`ProcessLockTests` 3개 × 30회):** 유휴 0/30 실패, 12코어 부하 0/30 실패(수정 전 부하 29/30).
+- **변이 확인 3종:**
+  - 잠금 생략(`acquire`가 바로 반환): 기존 경합 검사가 `Busy not raised`로 실패. 차단 대기 테스트도 실패
+  - 잠금이 끝내 안 풀림(자식 생존): 2.25초에 "lock still held 2s after its process exited"로 실패
+  - 재획득 때 `Busy`가 아닌 오류: 재시도 없이 0.24초에 오류
+- **전체 테스트(Windows, CP949):** 495개, 통과, 건너뜀 5, 종료 코드 0(`VALIDATION_WINDOWS.txt`).
+
 ## 실제 Windows 전체 테스트 실패 27건 수정 (2026-10-25, 기준 88a9525, Windows 11 네이티브)
 
 처음으로 Windows PC(Python 3.14.5, 기본 코드 페이지 CP949, `PYTHONUTF8` 미설정)에서 전체 테스트를 돌렸다. 490개 중 실패 3, 오류 24, 건너뜀 5였다(사용자 로그 `windows-tests.log`, UTF-16). 네 묶음 모두 로그와 단독 재실행으로 재현한 뒤 고쳤다.

@@ -3,8 +3,8 @@
 # 기본 인코딩 CP949(locale cp949, utf8_mode 0, PYTHONUTF8 미설정). 원본 로그는 CP949이며 여기서는 UTF-8로 옮김
 # 명령: .venv\Scripts\python.exe -m unittest discover -s tests -v
 # 공식 포털 명세(vendor/meritz-portal-20261015.json)가 없는 상태의 결과: 명세 대조 3개가 건너뜀
-# 이 실행 직전의 같은 코드 실행 1회는 부하 중 잠금 해제 타이밍 1건 오류(WORK_STATUS 참고)
-# 원 로그 머리: HEAD 88a9525 + uncommitted fixes (final code); 2026-10-25T20:20:52+09:00
+# 잠금 테스트는 종료 확인 뒤 최대 2초 재획득(WORK_STATUS 참고). 유휴·12코어 부하 각 30회 반복 실패 0
+# 원 로그 머리: HEAD 2cdab64 + lock tests: bounded reacquire after a confirmed exit; 2026-10-25T20:41:09+09:00
 # 원 로그 머리: python 3.14.5 locale cp949 fs utf-8 stdout cp949 utf8_mode 0
 # 원 로그 머리: PYTHONUTF8 unset; .venv\Scripts\python.exe -m unittest discover -s tests -v
 
@@ -109,7 +109,7 @@ test_confirmed_dates_are_kept_and_only_computed_values_are_corrected (test_audit
 <project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
   delta = pd.Timedelta(
 ok
-test_unscheduled_closure_inside_the_window_is_not_guessed (test_audit_e.SettlementCalendarTests.test_unscheduled_closure_inside_the_window_is_not_guessed) ... <project>\.venv\Lib\site-packages\pandas\core\arrays\datetimes.py:668: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x000002935AC66890>
+test_unscheduled_closure_inside_the_window_is_not_guessed (test_audit_e.SettlementCalendarTests.test_unscheduled_closure_inside_the_window_is_not_guessed) ... <project>\.venv\Lib\site-packages\pandas\core\arrays\datetimes.py:668: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x00000223913C6890>
   converted = ints_to_pydatetime(
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 <project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
@@ -573,7 +573,7 @@ test_registration_is_read_from_schtasks_not_from_generated_files (test_windows_t
 test_two_registered_tasks_are_flagged (test_windows_tasks.WindowsStatusTests.test_two_registered_tasks_are_flagged) ... ok
 
 ----------------------------------------------------------------------
-Ran 495 tests in 112.820s
+Ran 495 tests in 112.993s
 
 OK (skipped=5)
 # exit code: 0

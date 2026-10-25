@@ -42,6 +42,31 @@ def hold_in_child(lock, seconds):
     return proc
 
 
+RELEASE_LIMIT_SECONDS = 2        # after a confirmed process exit; 34 ms was the worst seen under load
+
+
+def kill_and_reacquire(test, child, lock):
+    """Kill the holder (a crash: no clean unlock), confirm it exited, then take
+    the lock for real. Windows releases a dead process's lock and handle a
+    little after the exit (LockFileEx: the time depends on system resources;
+    7-34 ms measured under full CPU load). The non-blocking acquire is retried
+    only on Busy, every 10 ms until a fixed limit; any other error fails at
+    once, and a lock that outlives its process fails the test. held() releases
+    the acquired lock when the block ends."""
+    child.kill()
+    child.wait(10)                                                      # raises unless it really exited
+    test.assertIsNotNone(child.returncode)
+    deadline = time.monotonic() + RELEASE_LIMIT_SECONDS
+    while True:
+        try:
+            with oslock.held(lock):
+                return
+        except oslock.Busy:
+            if time.monotonic() >= deadline:
+                test.fail(f"lock still held {RELEASE_LIMIT_SECONDS}s after its process exited")
+            time.sleep(0.01)
+
+
 class ProcessLockTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -52,24 +77,27 @@ class ProcessLockTests(unittest.TestCase):
         lock = self.dir / "account-a.lock"
         child = hold_in_child(lock, 60)
         try:
-            with self.assertRaises(oslock.Busy):
+            with self.assertRaises(oslock.Busy):                       # refused while the holder lives
                 with oslock.held(lock):
                     pass
             self.assertTrue(issubclass(oslock.Busy, BlockingIOError))    # existing `except BlockingIOError` paths
-        finally:
-            child.kill()                                                # crash: no clean unlock
+        except BaseException:
+            child.kill()
             child.wait(10)
-        with oslock.held(lock):                                         # the OS released it
-            pass
+            raise
+        kill_and_reacquire(self, child, lock)                            # the OS released it
 
     def test_different_accounts_never_block_each_other(self):
-        child = hold_in_child(self.dir / "account-a.lock", 60)
+        lock = self.dir / "account-a.lock"
+        child = hold_in_child(lock, 60)
         try:
             with oslock.held(self.dir / "account-b.lock"):
                 pass
-        finally:
+        except BaseException:
             child.kill()
             child.wait(10)
+            raise
+        kill_and_reacquire(self, child, lock)    # cleanup then no longer meets the dead holder's file (0/30 under load)
 
     def test_a_blocking_lock_waits_for_the_other_process(self):
         lock = self.dir / "token.lock"
