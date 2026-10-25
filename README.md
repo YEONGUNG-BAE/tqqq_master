@@ -314,6 +314,80 @@ TQQQ·QQQ·QQQM·BRK.B는 기존 경로를 그대로 쓰며, 사용자 설정으
 3. 실행 중 Mac을 재부팅합니다. 로그인(또는 데몬이면 디스크 잠금 해제) 뒤 `service-status`로 마지막 실행이 갱신되는지 봅니다.
 4. 실제 주문이 걸린 장애 검증(주문 직후 네트워크 차단 등)은 별도로 명시 승인한 범위에서만 합니다.
 
+## Windows에서 별도 계좌 운영 (예: 아버지 계좌)
+
+같은 코드로 Windows 네이티브 Python에서 실행합니다(WSL 불필요). 설치마다 **자기 계좌만** 운영합니다. 컴퓨터 사이의 운용 인계, 상태 DB 동기화, 여러 계좌의 중앙 운용은 하지 않습니다.
+
+**설치** (그 PC의 그 사용자 계정으로, 관리자 권한 불필요)
+```bat
+py -3 -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m unittest discover -s tests
+```
+- Windows에는 시간대 데이터가 없어서 `tzdata`가 필요합니다. `requirements.txt`에 들어 있습니다.
+- 계산은 UTC와 미국 거래소 시간 기준이므로, PC의 시간대가 한국이 아니어도 결과가 같습니다.
+
+**새 설치는 새 상태로 시작합니다**
+- Mac의 `state_*`, `token.json`, `config.json`의 `verified` 값을 복사하지 마세요.
+- 새 폴더에서 `doctor`로 그 계좌의 실제 보유·미체결·예약주문을 확인합니다.
+- `state_dir`는 로컬 사용자 폴더에 둡니다. OneDrive·공유 폴더·네트워크 드라이브는 피하세요. `service-status`가 동기화 폴더를 경고합니다.
+
+**그 계좌의 값 입력**
+- `secrets.env`: 그 명의자의 `MERITZ_CLIENT_ID`·`MERITZ_CLIENT_SECRET`, 그리고 이 PC가 메리츠에 등록된 실제 MAC 주소(`MERITZ_MAC_ADDRESS`)를 넣습니다. 다른 기기 주소를 쓰지 마세요.
+- 텔레그램은 설치마다 봇을 따로 만들고, `TELEGRAM_CHAT_ID`에 그 사용자의 개인 채팅 ID를 넣는 것을 권합니다.
+- `config.json`의 `account.alias`에는 "아버지 계좌" 같은 이름만 넣습니다. 숫자 4자리 이상이나 메일 주소는 거부됩니다. 이 이름이 알림 제목과 `/status`에 붙습니다.
+- `account.key_fingerprint`는 아래 명령이 보여 주는 `loaded_key_fingerprint`(16자리, 비밀 아님)를 넣습니다. 이후 다른 설치의 `secrets.env`를 잘못 넣으면 요청 전에 멈춥니다.
+  ```bat
+  .venv\Scripts\python.exe -m autotrader account show --config "C:\...\config.json"
+  ```
+- 계좌 식별의 검증 범위: 메리츠 REST API는 계좌번호를 돌려주지 않습니다. 그래서 "이 설치가 설정한 API 키를 쓴다"까지만 확인합니다.
+- 같은 계좌의 키를 재발급했다면 `account relink --confirm-same-account --note "확인 방법"`으로 바꿉니다. 사용자 확인으로 기록되고, 감사 이벤트가 남습니다.
+- 기록은 있는데 결속이 없는 DB는 자동으로 귀속하지 않습니다. 확인한 뒤 `account link --confirm`으로 묶습니다.
+
+**파일 권한 (ACL)**
+Windows에서는 chmod가 동작하지 않으므로, 직접 설정한 뒤 확인합니다.
+```bat
+icacls secrets.env /inheritance:r /grant:r "%USERNAME%:F"
+icacls state_observe /inheritance:r /grant:r "%USERNAME%:(OI)(CI)F"
+icacls secrets.env
+.venv\Scripts\python.exe -m autotrader service-status --config "C:\...\config.json"
+```
+`service-status`의 `permissions`에 `Everyone`·`Users`·`Authenticated Users`가 나오면 다시 설정하세요. 이 판정은 icacls 출력을 읽는 방식이며, 실제 Windows에서는 아직 확인되지 않았습니다.
+
+**자동 실행 (작업 스케줄러)**
+```bat
+.venv\Scripts\python.exe install_windows_task.py
+```
+설정 파일 두 개를 생성만 합니다. 둘 중 **하나만** 등록하세요. 둘 다 1분마다 실행하고, 앞 실행이 끝나지 않았으면 새로 시작하지 않습니다(앱의 계좌 잠금이 한 번 더 막습니다). 절전·부팅으로 놓친 실행을 몰아서 하지 않고, 다음 실행이 먼저 기존 주문을 대조합니다.
+- 로그인 후 실행(로그인한 동안만, 암호 저장 없음):
+  ```bat
+  schtasks /Create /TN "\tqqq\run-on-logon" /XML tqqq-task-logon.xml
+  ```
+- 부팅 시 실행(로그인 안 해도 실행, Windows가 그 사용자의 암호를 저장):
+  ```bat
+  schtasks /Create /TN "\tqqq\run-at-startup" /XML tqqq-task-startup.xml /RU "%USERDOMAIN%\%USERNAME%" /RP *
+  ```
+- 상태 확인과 해제:
+  ```bat
+  schtasks /Query /TN "\tqqq\run-on-logon" /V /FO LIST
+  .venv\Scripts\python.exe -m autotrader service-status --config "C:\...\config.json"
+  schtasks /Delete /TN "\tqqq\run-on-logon" /F
+  ```
+- 최고 권한(관리자)으로 실행하도록 설정하지 마세요. 생성 파일에는 비밀정보가 없습니다.
+
+**외부 감시**
+- 설치마다 `status`의 `monitor.instance`가 다릅니다.
+- `monitor.json`의 `instances`에 넣고, `instance_names`에 별칭을 붙이면 알림에서 구분됩니다.
+
+**Windows에서 아직 확인하지 않은 것**
+Windows PC가 없어서, 아래 항목은 그 PC에서 사용자가 확인해야 합니다.
+1. 전체 테스트 실행. 잠금 테스트는 실제 두 프로세스로 `msvcrt.locking` 경로를 시험합니다.
+2. 두 명령 프롬프트에서 동시에 `run`을 실행했을 때 하나만 진행되는지
+3. 작업 스케줄러 등록·실행·해제
+4. icacls 설정과 `service-status`의 권한 판정
+5. 절전 해제·재부팅 뒤 첫 실행이 기존 주문을 먼저 대조하는지
+6. `doctor`로 계좌 확인
+
 ## 예약 실행과 장애 처리
 
 검증 전에도 읽기 전용 관찰을 예약할 수 있습니다. 다음 명령은 설정 파일만 생성합니다.

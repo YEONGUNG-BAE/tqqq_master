@@ -15,7 +15,8 @@
 .venv/bin/python -m autotrader tax --config config.json       # 저장된 원장으로 예상 세액 (네트워크 없음)
 .venv/bin/python -m autotrader tax-sync --config config.json  # 세무 원장 동기화 (GET 조회만)
 .venv/bin/python -m autotrader telegram --config config.json  # 텔레그램 명령 1회 처리
-.venv/bin/python -m autotrader service-status --config config.json  # 서비스 설치·FileVault·마지막 실행 (읽기 전용)
+.venv/bin/python -m autotrader service-status --config config.json  # 서비스 설치·권한·마지막 실행 (읽기 전용)
+.venv/bin/python -m autotrader account show --config config.json    # 설치의 키 지문·DB 결속 (네트워크 없음)
 .venv/bin/python -m autotrader live-check plan --config config.json --budget-usd <검증예산USD>   # 읽기 전용 계획
 .venv/bin/python -m autotrader live-check execute --config config.json --plan <ID> --confirm-live # 계획 범위의 실거래
 .venv/bin/python -m autotrader live-check status|stop|resume --config config.json --plan <ID>
@@ -65,4 +66,6 @@ exchange-calendars의 NumPy DeprecationWarning은 알려진 경고다. 근거 �
 - 기존 비전략 보유(QQQM·BRK.B, 이전 방어 자산 QQQ 등)는 자동 매도·전환하지 않는다. `migrate_symbols`에 사용자가 명시할 때만 예외다(개장 실행창에서만). 보유 QQQ를 SGOV로 표시하지 않는다.
 - 비밀(`secrets.env`, `token.json`)과 상태(`state*/`, `paper_*/`)는 Git에서 제외한다. 내용을 출력하지 않는다. `paper_self`와 상태 DB는 삭제하거나 초기화하지 않는다.
 - 실계좌 소액 검증(`live-check`)만 좁은 예외다. 사용자가 정한 USD 예산과 계획 ID, `--confirm-live`가 있을 때 TQQQ·SGOV를 1주씩 정해진 6단계로만 거래한다. 권한은 의도 저장 전·전송 직전·전송 계층에서 모두 검사한다. 일반 run의 live 검사, observe 설정, verified, migrate_symbols, 신호·전환 상태는 바꾸지 않는다. 다른 보유 종목은 주문·취소하지 않는다. 검증이 진행 중이거나 테스트 보유가 남아 있으면 일반 run은 아무 요청도 보내지 않는다. 검증 요청은 같은 계좌 저널에 소유자로 표시하고, 소유자별로만 대조·장부 반영한다.
-- 상시 실행 등록(launchctl), 실제 자금 이동, live 전환, 원격 업로드는 사용자의 명시적 결정 전에는 하지 않는다.
+- 플랫폼: macOS와 Windows 네이티브를 같은 코드로 지원한다. 프로세스 잠금·권한·파일 교체는 `oslock.py`로만 하고, 잠금을 생략하는 경로를 만들지 않는다. 실행 잠금(프로세스 종료로 해제)과 live-check 소유권 표시(남는 파일)를 구분한다. Windows 권한은 chmod가 아니라 ACL로 설정·점검한다.
+- 설치마다 자기 계좌만 운영한다. 금융 요청 전에 설정의 `account.key_fingerprint`·DB에 묶인 키와 실제 키를 대조한다(REST API에 계좌번호가 없어 키 대조까지만 검증). 기록이 있는데 결속이 없는 DB는 `account link --confirm` 없이 귀속하지 않는다. 다른 설치의 DB·토큰·verified를 복사해 시작하지 않는다. 별칭에는 계좌번호를 넣지 않는다.
+- 상시 실행 등록(launchctl, Windows 작업 스케줄러), 실제 자금 이동, live 전환, 원격 업로드는 사용자의 명시적 결정 전에는 하지 않는다.

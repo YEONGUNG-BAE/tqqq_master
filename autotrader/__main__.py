@@ -695,7 +695,8 @@ def service_status_command(args):
     load_env(Path(args.config).resolve().parent / "secrets.env")
     journal = Journal(state / "journal.sqlite")
     try:
-        output(ops.service_status(ROOT, journal.db, datetime.now(timezone.utc)))
+        output(ops.service_status(ROOT, journal.db, datetime.now(timezone.utc), state=state,
+                                  secrets=Path(args.config).resolve().parent / "secrets.env"))
     finally:
         journal.db.close()
     return 0

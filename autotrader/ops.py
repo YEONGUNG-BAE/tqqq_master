@@ -11,9 +11,11 @@ import json
 import os
 import plistlib
 import subprocess
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from . import oslock
 from .core import SUBMITTING, UNKNOWN
 from .progress import classify
 from .schedule import KST
@@ -191,8 +193,45 @@ def _run(argv):
         return None, type(exc).__name__
 
 
-def service_status(root, journal_db=None, now=None, runner=_run):
+WINDOWS_TASKS = {"logon": r"\tqqq\run-on-logon", "startup": r"\tqqq\run-at-startup"}
+SYNCED = ("onedrive", "dropbox", "google drive", "icloud")
+
+
+def _windows_tasks(runner):
+    """Read-only schtasks query per generated task name."""
+    out = {}
+    for kind, name in WINDOWS_TASKS.items():
+        code, text = runner(["schtasks", "/Query", "/TN", name, "/FO", "LIST", "/V"])
+        status = None
+        for line in (text or "").splitlines():
+            if line.strip().lower().startswith(("status:", "scheduled task state:")):
+                status = (status + "; " if status else "") + line.split(":", 1)[1].strip()
+        out[kind] = {"registered": code == 0, "status": status,
+                     "starts": "after this user logs on" if kind == "logon"
+                     else "at boot, logged on or not (stored password)"}
+    return out
+
+
+def service_status(root, journal_db=None, now=None, runner=_run, platform=None, state=None, secrets=None):
     """What is actually installed; never installs, loads or changes anything."""
+    platform = platform or sys.platform
+    common = {"permissions": {name: oslock.acl_report(path) for name, path in
+                              (("secrets.env", secrets), ("state_dir", state)) if path is not None},
+              "synced_folder_warning": [str(p) for p in (state, secrets) if p is not None
+                                        and any(s in str(p).lower() for s in SYNCED)]}
+    if platform == "win32":
+        tasks = _windows_tasks(runner)
+        report = dict(common, windows_tasks=tasks,
+                      both_active=all(t["registered"] for t in tasks.values()),
+                      generated_files={f"tqqq-task-{k}.xml": (Path(root) / f"tqqq-task-{k}.xml").exists()
+                                       for k in WINDOWS_TASKS},
+                      note="a generated XML is not an installed task; only schtasks registration counts",
+                      external_monitor={"code": "implemented (autotrader/monitor.py)",
+                                        "configured_on_this_pc": bool(os.environ.get("MONITOR_URL")),
+                                        "deployed_and_verified": "unknown from this PC: check the monitor host"})
+        if report["both_active"]:
+            report["warning"] = "both tasks are registered: delete one (README)"
+        return _with_journal(report, journal_db, now)
     uid = os.getuid()
     agent_file = Path.home() / "Library/LaunchAgents" / f"{AGENT_LABEL}.plist"
     daemon_file = Path("/Library/LaunchDaemons") / f"{DAEMON_LABEL}.plist"
@@ -200,6 +239,7 @@ def service_status(root, journal_db=None, now=None, runner=_run):
     daemon_code, _ = runner(["launchctl", "print", f"system/{DAEMON_LABEL}"])
     vault_code, vault_text = runner(["fdesetup", "status"])
     report = {
+        **common,
         "launch_agent": {"file_installed": agent_file.exists(), "loaded": agent_code == 0,
                          "starts": "after this user logs in (not before login)"},
         "launch_daemon": {"file_installed": daemon_file.exists(), "loaded": daemon_code == 0,
@@ -212,13 +252,17 @@ def service_status(root, journal_db=None, now=None, runner=_run):
                              "configured_on_this_mac": bool(os.environ.get("MONITOR_URL")),
                              "deployed_and_verified": "unknown from this Mac: check the monitor host"},
     }
+    if report["both_active"]:
+        report["warning"] = "agent and daemon are both loaded: boot out one of them (README rollback steps)"
+    return _with_journal(report, journal_db, now)
+
+
+def _with_journal(report, journal_db, now):
     if journal_db is not None and now is not None:
         health = _meta(journal_db, "health") or {}
         report["last_run"] = {"at": health.get("at"), "stale": bool(health.get("at")) and
                               now - datetime.fromisoformat(health["at"]) > STALE_AFTER}
         report["monitor_last_send"] = _meta(journal_db, "monitor_last_send")
-    if report["both_active"]:
-        report["warning"] = "agent and daemon are both loaded: boot out one of them (README rollback steps)"
     return report
 
 

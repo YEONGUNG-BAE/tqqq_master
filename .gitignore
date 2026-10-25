@@ -39,6 +39,7 @@ logs/
 journal_unusable.json
 doctor/
 *.plist
+tqqq-task-*.xml
 locks/
 
 # --- 재배포 여부를 확인하지 못한 외부 문서 (공식 링크에서 직접 받음, README 참고) ---

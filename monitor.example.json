@@ -3,6 +3,7 @@
   "host": "0.0.0.0",
   "port": 8787,
   "instances": ["inst-replace-with-the-id-from-status"],
+  "instance_names": {"inst-replace-with-the-id-from-status": "내 계좌"},
   "heartbeat_timeout_seconds": 300,
   "work_freshness_seconds": 900,
   "signal_grace_minutes": 120,

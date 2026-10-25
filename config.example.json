@@ -1,5 +1,6 @@
 {
   "state_dir": "state_observe",
+  "account": {"alias": "내 계좌", "key_fingerprint": null},
   "notifications": true,
   "execution": {
     "mode": "observe",
