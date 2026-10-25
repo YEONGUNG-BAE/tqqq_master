@@ -1,4 +1,4 @@
-# 검증 출력 — 2026-10-25 11:06 KST, macOS Darwin 25.5.0
+# 검증 출력 — 2026-10-25 11:53 KST, macOS Darwin 25.5.0
 # Python 3.14.5 | exchange-calendars 4.12 | pandas 2.3.3 | NumPy 2.5.4
 # 명령: .venv/bin/python -m unittest discover -s tests -v
 # exchange-calendars의 NumPy DeprecationWarning은 알려진 경고이며 결과에 영향 없음
@@ -99,7 +99,7 @@ test_healthy_plan_baseline (test_audit_f.CliTests.test_healthy_plan_baseline) ..
   delta = pd.Timedelta(
 <project>/.venv/lib/python3.14/site-packages/exchange_calendars/utils/pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
   delta = pd.Timedelta(
-/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e106e30>
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/csv.py:185: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c23ee30>
   d = dict(zip(self.fieldnames, row))
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
@@ -188,7 +188,7 @@ test_token_refusal_is_explicit_and_post_token_error_is_not_resent (test_fault_in
 test_repeated_token_refusal_locks_and_unlock_resumes (test_fault_injection.CliAuthLockTests.test_repeated_token_refusal_locks_and_unlock_resumes) ... ok
 test_overlapping_scheduler_or_second_state_folder_does_nothing (test_fault_injection.CliConcurrencyTests.test_overlapping_scheduler_or_second_state_folder_does_nothing) ... ok
 test_corrupt_state_database_blocks_every_request (test_fault_injection.CliStateAndNotificationTests.test_corrupt_state_database_blocks_every_request) ... ok
-test_daily_close_outage_still_reaches_the_engine (test_fault_injection.CliStateAndNotificationTests.test_daily_close_outage_still_reaches_the_engine) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e105d50>
+test_daily_close_outage_still_reaches_the_engine (test_fault_injection.CliStateAndNotificationTests.test_daily_close_outage_still_reaches_the_engine) ... /opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c23dd50>
   def __init__(self, name, parent):
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
@@ -250,6 +250,8 @@ test_only_refused_connections_count_as_not_sent (test_fault_injection.TransportC
 test_reads_retry_with_growing_jittered_backoff (test_fault_injection.TransportClassificationTests.test_reads_retry_with_growing_jittered_backoff) ... ok
 test_reply_without_response_code_is_unknown_not_refused (test_fault_injection.TransportClassificationTests.test_reply_without_response_code_is_unknown_not_refused) ... ok
 test_send_start_hook_runs_after_token_and_before_transport (test_fault_injection.TransportClassificationTests.test_send_start_hook_runs_after_token_and_before_transport) ... ok
+test_a_continuing_incident_never_bypasses_the_channel_retry_time (test_incidents.ConcurrentIncidentsAcrossRestartsTests.test_a_continuing_incident_never_bypasses_the_channel_retry_time) ... ok
+test_a_continuing_incident_never_bypasses_the_channel_retry_time (test_incidents.ConcurrentIncidentsTests.test_a_continuing_incident_never_bypasses_the_channel_retry_time) ... ok
 test_delivery_pending_and_resolution_move_into_one_incident (test_incidents.LegacyMigrationTests.test_delivery_pending_and_resolution_move_into_one_incident) ... ok
 test_kill_in_the_middle_of_the_migration_leaves_the_old_records_and_reruns_once (test_incidents.LegacyMigrationTests.test_kill_in_the_middle_of_the_migration_leaves_the_old_records_and_reruns_once) ... ok
 test_migration_applies_once_even_when_run_again (test_incidents.LegacyMigrationTests.test_migration_applies_once_even_when_run_again) ... ok
@@ -407,38 +409,38 @@ test_run_answers_status_while_another_process_holds_the_state_lock (test_operati
 test_stale_state_is_never_presented_as_current (test_operations.TelegramStatusTests.test_stale_state_is_never_presented_as_current) ... ok
 test_status_and_issues_answer_from_local_state_without_sensitive_figures (test_operations.TelegramStatusTests.test_status_and_issues_answer_from_local_state_without_sensitive_figures) ... ok
 test_housekeeping_still_answers_status_when_the_tax_plan_cannot_be_built (test_operations_fixes.ChatWithBrokenTaxPlanTests.test_housekeeping_still_answers_status_when_the_tax_plan_cannot_be_built) ... ok
-test_status_survives_a_broken_tax_schema (test_operations_fixes.ChatWithBrokenTaxPlanTests.test_status_survives_a_broken_tax_schema) ... <project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e215e40>
+test_status_survives_a_broken_tax_schema (test_operations_fixes.ChatWithBrokenTaxPlanTests.test_status_survives_a_broken_tax_schema) ... <project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c342200>
   converted = ints_to_pydatetime(
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
-test_telegram_command_answers_when_make_plan_fails (test_operations_fixes.ChatWithBrokenTaxPlanTests.test_telegram_command_answers_when_make_plan_fails) ... <project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10aa1e020>
+test_telegram_command_answers_when_make_plan_fails (test_operations_fixes.ChatWithBrokenTaxPlanTests.test_telegram_command_answers_when_make_plan_fails) ... <project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x108b56020>
   converted = ints_to_pydatetime(
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a9456c0>
+<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x108a8d6c0>
   converted = ints_to_pydatetime(
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a944c70>
+<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x108a8c220>
   converted = ints_to_pydatetime(
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10a9463e0>
+<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x108a8e3e0>
   converted = ints_to_pydatetime(
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e107a60>
+<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c23de40>
   converted = ints_to_pydatetime(
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e105e40>
+<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c23f790>
   converted = ints_to_pydatetime(
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e1067a0>
+<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c23fc40>
   converted = ints_to_pydatetime(
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e107c40>
+<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c23d990>
   converted = ints_to_pydatetime(
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e107e20>
+<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c23f6a0>
   converted = ints_to_pydatetime(
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e105d50>
+<project>/.venv/lib/python3.14/site-packages/pandas/core/arrays/datetimelike.py:477: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10c23f3d0>
   converted = ints_to_pydatetime(
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
@@ -565,6 +567,6 @@ test_registered_withdrawal_moves_once_and_unrelated_ones_are_not_tax (test_tax_r
 test_release_only_by_explicit_user_command (test_tax_reserve.WithdrawalTests.test_release_only_by_explicit_user_command) ... ok
 
 ----------------------------------------------------------------------
-Ran 459 tests in 14.383s
+Ran 461 tests in 15.122s
 
 OK

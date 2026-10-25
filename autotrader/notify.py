@@ -272,6 +272,7 @@ class Notifier:
         if "channels" not in record and record.get("at"):
             record = {"channels": {}, "legacy": record}   # older single-status records
         channels = (default_channels() if self.channels is None else self.channels) if self.enabled else {}
+        backoff = self.j.meta("channel_retry_at", {}) or {}
         due = {}
         for name, channel in channels.items():
             last = record["channels"].get(name) if record else None
@@ -279,6 +280,8 @@ class Notifier:
                 last = record["legacy"]
             if last and now - datetime.fromisoformat(last["at"]) < (WINDOWS[category] if last.get("ok") else RETRY_AFTER_FAILURE):
                 continue
+            if last and name in backoff and now < datetime.fromisoformat(backoff[name]):
+                continue    # not this incident's first notice: it waits for the channel like any retry
             due[name] = channel
         if not due and (self.enabled or record):
             return False

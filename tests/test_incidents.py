@@ -237,3 +237,49 @@ class LegacyMigrationTests(Base):
         self.notifier.retry_pending(self.at(31))
         self.assertTrue(self.telegram[0].startswith("[재전송 · 발생 10-15 22:30 KST · 이미 해소됨 10-15 22:40 KST]"))
         self.assertEqual(sorted(self.journal.meta("notified")), ["hold:reservation#1"])
+
+
+class ConcurrentIncidentsTests(Base):
+    """Two different problems at once: a failed retry holds the channel for
+    every path, send() included; only a new incident's first notice is tried."""
+
+    def setUp(self):
+        self.attempts = []
+        super().setUp()
+
+    def tg(self, text):
+        self.attempts.append(text)
+        super().tg(text)
+
+    def notice(self, code, minutes):
+        self.step()
+        self.notifier.send("hold", code, f"보류 {code}", self.at(minutes))
+
+    def test_a_continuing_incident_never_bypasses_the_channel_retry_time(self):
+        self.down = True
+        self.notice("a", 0)                                  # A fails
+        self.notice("b", 10)                                 # B fails
+        self.assertEqual(len(self.attempts), 2)
+        self.step()
+        self.notifier.retry_pending(self.at(31))             # retry fails: channel held until 61
+        tried = len(self.attempts)
+        self.notice("a", 31)                                 # A still present in the same run
+        self.notice("b", 32)
+        for minute in range(33, 61):
+            self.step()
+            self.notifier.retry_pending(self.at(minute))
+            self.notice("a", minute)
+        self.assertEqual(len(self.attempts), tried)
+        self.notice("c", 40)                                 # a NEW incident's first notice is still tried
+        self.assertEqual(len(self.attempts), tried + 1)
+        self.down = False
+        self.step()
+        self.notifier.retry_pending(self.at(61))             # the channel's time has come
+        self.assertGreater(len(self.telegram), 0)
+        self.notice("a", 62)
+        delivered_a = [t for t in self.telegram if "보류 a" in t]
+        self.assertEqual(len(delivered_a), 1)                # delivered once, not again by send()
+
+
+class ConcurrentIncidentsAcrossRestartsTests(ConcurrentIncidentsTests):
+    restart_each_step = True
