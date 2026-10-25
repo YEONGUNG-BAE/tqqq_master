@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from .core import D, Stop, money
+from . import oslock
 from .signal import RULE, SIGNAL_SYMBOL, STRATEGY_VERSION, WINDOW, decisions
 
 
@@ -86,7 +87,7 @@ def refresh(broker, path, schedule, expected):
         writer = csv.writer(f)
         writer.writerow(["date", "close"])
         writer.writerows(sorted(history.items()))
-    tmp.replace(path)
+    oslock.replace(tmp, path)
     decision = asdict(decisions([price for _, price in sorted(history.items())])[-1])
     decision.update(signal_date=expected, history_rebase=rebase, **SIGNAL_FIELDS)
     return decision

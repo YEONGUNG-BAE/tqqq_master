@@ -327,7 +327,8 @@ class DoctorTests(Harness):
             self.assertEqual(cli.main(), 0)
         self.assertTrue(all(m == "GET" or p == "/oauth2/token" for m, p in fake.calls))
         saved = root / "state_live/doctor/latest.json"
-        self.assertEqual(saved.stat().st_mode & 0o777, 0o600)
+        if os.name != "nt":                      # Windows: ACLs, checked by oslock.acl_report
+            self.assertEqual(saved.stat().st_mode & 0o777, 0o600)
         text = out.getvalue() + saved.read_text()
         for secret in list(SECRET_ENV.values()) + [TOKEN]:
             self.assertNotIn(secret, text)

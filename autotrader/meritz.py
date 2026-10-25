@@ -5,7 +5,6 @@ Transport never retries FX/order/cancel POSTs, including expired-token errors.
 """
 from __future__ import annotations
 
-import fcntl
 import json
 import hashlib
 import os
@@ -24,7 +23,7 @@ from zoneinfo import ZoneInfo
 from .core import (CLOCK_SKEW_SECONDS, D, FXQuote, NotSent, OrderStatus, PendingConfirmation, Quote, Refused,
                    RefusedUnconfirmed,
                    Rejected, ReservationLookup, Snapshot, Stop, UnknownOutcome, money)
-from . import instruments
+from . import instruments, oslock
 from .signal import SIGNAL_SYMBOL
 
 KST = ZoneInfo("Asia/Seoul")
@@ -130,8 +129,7 @@ class Client:
         with an OS lock so concurrent processes never issue in parallel. There is
         no refresh-token grant in the spec; a new token is simply issued."""
         self.state.mkdir(parents=True, exist_ok=True)
-        with open(self.state / "token.lock", "a") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+        with oslock.held(self.state / "token.lock", blocking=True):
             try:
                 cached = json.loads(self.token_file.read_text())
                 if cached.get("key_fingerprint") == self.key_fingerprint and cached["expires"] > time.time() + 120:
@@ -149,8 +147,8 @@ class Client:
             with os.fdopen(fd, "w") as f:
                 json.dump({"token": token, "expires": time.time() + int(response["expires_in"]),
                            "key_fingerprint": self.key_fingerprint}, f)
-            os.chmod(tmp, 0o600)
-            tmp.replace(self.token_file)
+            oslock.private(tmp)
+            oslock.replace(tmp, self.token_file)
             self.token_issued = True
             return token
 

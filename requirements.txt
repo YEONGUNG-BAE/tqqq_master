@@ -1,3 +1,6 @@
 exchange-calendars==4.12
 pandas>=2.2,<3
 numpy>=1.26.4,<3
+# IANA time zones for zoneinfo on Windows (no system database there). Already
+# present on macOS through pandas; listed explicitly for native Windows Python.
+tzdata>=2024.1

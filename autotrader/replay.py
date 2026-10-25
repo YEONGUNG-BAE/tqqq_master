@@ -7,13 +7,13 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import datetime, timedelta
-import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from . import oslock
 from .core import D, Engine, Journal, Settings, Stop, money
 from .paper import Paper
 from .signal import RULE, SIGNAL_SYMBOL, STRATEGY_VERSION, decisions
@@ -142,10 +142,10 @@ def replay(scenario_path, state, *, max_sessions=None):
     scenario, fingerprint = load_scenario(scenario_path)
     path = Path(state).resolve()
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
-    os.chmod(path, 0o700)
+    oslock.private(path, directory=True)
     with open(path/"run.lock", "a") as lock:
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            oslock.acquire(lock)
         except BlockingIOError as exc:
             raise Stop("Another process is using this state") from exc
         return _replay_locked(scenario, fingerprint, path, max_sessions)
@@ -219,7 +219,7 @@ def _replay_locked(scenario, fingerprint, path, max_sessions):
                       actions=journal.rows(), scenario_sha256=fingerprint)
         tmp = path/"replay.tmp"
         tmp.write_text(json.dumps(report, ensure_ascii=False, default=str, indent=2))
-        tmp.replace(path/"replay.json")
+        oslock.replace(tmp, path/"replay.json")
         return report
     finally:
         journal.db.close()

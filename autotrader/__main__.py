@@ -1,5 +1,4 @@
 import argparse
-import fcntl
 import hashlib
 import json
 import os
@@ -14,7 +13,7 @@ from .history import recompute, refresh
 from .signal import STRATEGY_VERSION
 from .meritz import AuthError, Client, Meritz
 from .notify import Notifier, default_channels, mark_resolved, scrub, secret_values
-from . import books, heartbeat, livecheck, ops, progress, tax, telegram_bot
+from . import books, heartbeat, livecheck, ops, oslock, progress, tax, telegram_bot
 from .tax_reserve import TaxPlan
 from .paper import Paper
 from .schedule import KST, Schedule, confirm_regular_session
@@ -38,7 +37,7 @@ def load_config(path, *, allow_unverified_live=False):
     if not state.is_absolute():
         state = cfg_path.parent / state
     state.mkdir(parents=True, exist_ok=True, mode=0o700)
-    os.chmod(state, 0o700)
+    oslock.private(state, directory=True)
     settings = Settings(**cfg.get("execution", {}))
     if settings.mode == "paper":
         raise Stop("Paper mode uses the offline demo command; run supports observe/live")
@@ -72,10 +71,7 @@ def account_lock_path(cfg):
     trade the same account at once. flock is released by the OS on crash; the
     journal keeps any unresolved request regardless."""
     base = cfg.get("account_lock_dir") or os.environ.get("TQQQ_ACCOUNT_LOCK_DIR")
-    if not base:
-        base = ("~/Library/Application Support/tqqq_auto/locks" if sys.platform == "darwin"
-                else "~/.local/state/tqqq_auto/locks")
-    folder = Path(base).expanduser()
+    folder = Path(base).expanduser() if base else oslock.state_base() / "locks"
     folder.mkdir(parents=True, exist_ok=True, mode=0o700)
     key = os.environ.get("MERITZ_CLIENT_ID", "")
     name = hashlib.sha256(key.encode()).hexdigest()[:16] if key else "unconfigured"
@@ -113,7 +109,7 @@ def journal_unusable(marker, cfg, now, reason):
                 pass
         info["notified_at"] = now.isoformat()
     marker.write_text(json.dumps(info))
-    os.chmod(marker, 0o600)
+    oslock.private(marker)
     output({"error": "State database unusable: " + info["reason"] + "; no requests sent"})
     return 1
 
@@ -308,13 +304,13 @@ def run(args):
     load_env(Path(args.config).resolve().parent / "secrets.env")
     with open(state / "run.lock", "a") as lock:
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            oslock.acquire(lock)
         except BlockingIOError:
             answer_readonly(state)    # a long order or live check holds it: still answer /status, /issues
             return 0
         with open(account_lock_path(cfg), "a") as account:
             try:
-                fcntl.flock(account, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                oslock.acquire(account)
             except BlockingIOError:
                 answer_readonly(state)
                 return 0   # another process (any state folder) is working on this account
@@ -545,8 +541,8 @@ def live_check_command(args):
     load_env(Path(args.config).resolve().parent / "secrets.env")
     with open(state / "run.lock", "a") as lock, open(account_lock_path(cfg), "a") as account:
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            fcntl.flock(account, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            oslock.acquire(lock)
+            oslock.acquire(account)
         except BlockingIOError:
             if args.action == "stop":
                 return _stop_report(state, args.plan, "a running execute/resume holds the account and cancels "
@@ -671,7 +667,7 @@ def doctor(args):
     load_env(Path(args.config).resolve().parent / "secrets.env")
     with open(state / "run.lock", "a") as lock:
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            oslock.acquire(lock)
         except BlockingIOError:
             raise Stop("Another run is using this state directory; retry shortly")
         journal = Journal(state / "journal.sqlite")
@@ -698,7 +694,7 @@ def doctor(args):
     for name in (f"doctor-{stamp}.json", "latest.json"):
         path = folder / name
         path.write_text(text)
-        os.chmod(path, 0o600)
+        oslock.private(path)
     if args.json:
         print(text)
     else:
@@ -733,7 +729,7 @@ def demo(args):
 
 
 def local_status(args):
-    _, state, _ = load_config(args.config)
+    cfg, state, _ = load_config(args.config)
     journal = Journal(state / "journal.sqlite")
     output({"health": journal.meta("health"), "signal": journal.meta("signal"),
             "halt": journal.meta("halt"), "lock": journal.meta("lock_info"), "hold": journal.meta("active_hold"),
@@ -752,7 +748,7 @@ def local_status(args):
 def resolve(args):
     _, state, _ = load_config(args.config)
     with open(state / "run.lock", "a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        oslock.acquire(lock)
         journal = Journal(state / "journal.sqlite")
         action = journal.db.execute("SELECT * FROM actions WHERE id=?", (args.action,)).fetchone()
         if not action or action["status"] not in {"unknown", "submitting", "accepted", "partial", "cancelling",
@@ -775,7 +771,7 @@ def unlock(args):
     _, state, _ = load_config(args.config)
     with open(state / "run.lock", "a") as lock:
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            oslock.acquire(lock)
         except BlockingIOError:
             raise Stop("Another run is using this state directory; retry shortly")
         journal = Journal(state / "journal.sqlite")
@@ -827,7 +823,7 @@ def tax_sync_command(args):
     load_env(Path(args.config).resolve().parent / "secrets.env")
     with open(state / "run.lock", "a") as lock:
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            oslock.acquire(lock)
         except BlockingIOError:
             raise Stop("Another run is using this state directory; retry shortly")
         journal = Journal(state / "journal.sqlite")
@@ -855,7 +851,7 @@ def telegram_command(args):
         updates = telegram_bot.fetch(journal)              # network wait: no lock held
         with open(state / "run.lock", "a") as lock:
             try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                oslock.acquire(lock)
             except BlockingIOError:
                 # A run holds the state lock (and reads/moves reserves): answer the
                 # leading read-only messages now; plan changes wait for the run.

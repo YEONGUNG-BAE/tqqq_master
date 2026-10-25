@@ -475,17 +475,17 @@ class CliConcurrencyTests(Harness):
         return code, fake
 
     def test_overlapping_scheduler_or_second_state_folder_does_nothing(self):
-        import fcntl
+        from autotrader import oslock
         root = self.config()
         with patch.dict(os.environ, SECRET_ENV):
             lock_file = cli.account_lock_path({"account_lock_dir": str(self.state / "locks")})
         with open(lock_file, "a") as held:
-            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)        # another process owns the account
+            oslock.acquire(held)        # another process owns the account
             code, fake = self.run_cli(root)
         self.assertEqual((code, fake.calls), (0, []))
         state = root / "state_observe"
         with open(state / "run.lock", "a") as held:
-            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)        # same state folder busy
+            oslock.acquire(held)        # same state folder busy
             code, fake = self.run_cli(root)
         self.assertEqual((code, fake.calls), (0, []))
         code, fake = self.run_cli(root)

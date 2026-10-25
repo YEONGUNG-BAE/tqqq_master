@@ -35,6 +35,7 @@ from decimal import Decimal, ROUND_DOWN
 from pathlib import Path
 from uuid import uuid4
 
+from . import oslock
 from .core import DONE, PENDING, PREPARED, D, Locked, Stop, check_quote, limit_price, money
 from .signal import DEFENSIVE_SYMBOL, RISK_SYMBOL
 
@@ -643,11 +644,11 @@ def report(journal, plan_id):
 def write_report(state, plan_id, data):
     folder = Path(state) / "live_check"
     folder.mkdir(mode=0o700, exist_ok=True)
-    os.chmod(folder, 0o700)
+    oslock.private(folder, directory=True)
     path = folder / f"{plan_id}.json"
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2, default=str))
-    os.chmod(tmp, 0o600)
-    tmp.replace(path)
+    oslock.private(tmp)
+    oslock.replace(tmp, path)
     return path
 

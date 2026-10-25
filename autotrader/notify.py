@@ -227,7 +227,9 @@ def telegram_channel(token, chat_id, opener=urlopen):
 
 
 def default_channels():
-    channels = {"macos": macos_channel}
+    # The macOS banner exists only on macOS; elsewhere there is no local banner
+    # channel at all (a do-nothing function would be recorded as delivered).
+    channels = {"macos": macos_channel} if sys.platform == "darwin" else {}
     if os.environ.get("ALERT_SMTP_HOST") and os.environ.get("ALERT_TO") and os.environ.get("ALERT_FROM"):
         channels["smtp"] = smtp_channel
     if os.environ.get("TELEGRAM_BOT_TOKEN") and os.environ.get("TELEGRAM_CHAT_ID"):

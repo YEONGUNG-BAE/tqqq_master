@@ -266,7 +266,7 @@ class TelegramStatusTests(Base):
         self.assertEqual(telegram_bot._offset(self.journal.db), 1)     # the plan change is not skipped
 
     def test_run_answers_status_while_another_process_holds_the_state_lock(self):
-        import fcntl
+        from autotrader import oslock
         from autotrader import __main__ as cli
         from test_doctor import SECRET_ENV
         root = Path(self.tmp.name) / "cli"
@@ -280,7 +280,7 @@ class TelegramStatusTests(Base):
         self.updates = [{"update_id": 1, "message": {"chat": {"id": 7, "type": "private"}, "from": {"id": 7},
                                                      "text": "/status"}}]
         lock = open(root / "state" / "run.lock", "a")
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)               # e.g. a live check is running
+        oslock.acquire(lock)               # e.g. a live check is running
         try:
             with patch.object(telegram_bot, "http_transport", lambda token: self.transport), \
                  patch("autotrader.meritz.urlopen", side_effect=AssertionError("network forbidden")), \
@@ -366,7 +366,7 @@ class ServiceTests(unittest.TestCase):
             script = Path(tmp) / "install_launchd.py"
             script.write_text((ROOT / "install_launchd.py").read_text())
             out = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=30)
-            if os.getuid() == 0:
+            if os.name != "nt" and os.getuid() == 0:
                 # Intended refusal: the service files must be made by the Mac user.
                 self.assertNotEqual(out.returncode, 0)
                 self.assertIn("not root", out.stderr)

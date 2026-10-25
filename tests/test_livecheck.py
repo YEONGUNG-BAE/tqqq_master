@@ -2,7 +2,7 @@
 every other holding stays untouched. Fake broker / fake HTTP, temporary DBs,
 fixed clocks, child processes killed with os._exit; no real request is sent.
 The protected tickers here ("NDQX", "BRK.B") are placeholders, not the user's."""
-import fcntl
+from autotrader import oslock
 import io
 import json
 import os
@@ -637,7 +637,9 @@ class CliTests(unittest.TestCase):
             self.assertEqual(self.posts(fake), [], argv)
         report = json.loads((self.root / "state_observe/live_check" / f"{pid}.json").read_text())
         self.assertEqual(report["status"], "planned")
-        self.assertEqual(oct((self.root / "state_observe/live_check" / f"{pid}.json").stat().st_mode & 0o777), "0o600")
+        if os.name != "nt":                      # Windows: ACLs, checked by oslock.acl_report
+            self.assertEqual(oct((self.root / "state_observe/live_check" / f"{pid}.json").stat().st_mode & 0o777),
+                             "0o600")
 
     def test_execute_sends_only_the_plan_step_and_pauses_the_general_run(self):
         code, out, _ = self.cli("plan", "--budget-usd", "200")
@@ -687,7 +689,7 @@ class CliTests(unittest.TestCase):
         cfg = json.loads((self.root / "config.json").read_text())
         with patch.dict(os.environ, {"MERITZ_CLIENT_ID": __import__("test_doctor").SECRET_ENV["MERITZ_CLIENT_ID"]}):
             lock = open(cli.account_lock_path(cfg), "a")
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)                      # another process holds the account
+        oslock.acquire(lock)                      # another process holds the account
         try:
             code, out, fake = self.cli("execute", "--plan", pid, "--confirm-live")
         finally:
