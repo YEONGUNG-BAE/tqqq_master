@@ -12,6 +12,7 @@ dead process never silently releases ownership.
 from __future__ import annotations
 
 import os
+import re
 import sys
 import time
 from contextlib import contextmanager
@@ -109,24 +110,78 @@ def state_base():
     return Path.home() / ".local/state/tqqq_auto"
 
 
-BROAD_PRINCIPALS = ("Everyone", "BUILTIN\\Users", "Authenticated Users", "NT AUTHORITY\\Authenticated Users")
+# Broad groups by SID (SDDL short form and full SID), so the check does not
+# depend on the display language: Everyone, Authenticated Users, Users,
+# Guests, Anonymous, Interactive, and a domain's Domain Users (RID 513).
+BROAD_SIDS = {"WD": "Everyone", "S-1-1-0": "Everyone", "AU": "Authenticated Users",
+              "S-1-5-11": "Authenticated Users", "BU": "Users", "S-1-5-32-545": "Users",
+              "BG": "Guests", "S-1-5-32-546": "Guests", "AN": "Anonymous", "S-1-5-7": "Anonymous",
+              "IU": "Interactive", "S-1-5-4": "Interactive", "DU": "Domain Users"}
+_ACE = re.compile(r"\(([^()]*)\)")
+
+
+def broad_access(sddl):
+    """Broad groups granted access by the DACL of an SDDL string; None when
+    there is no DACL to read. Deny entries are ignored (conservative); a null
+    DACL (NO_ACCESS_CONTROL) grants everyone access."""
+    for line in (sddl or "").splitlines():
+        if "D:NO_ACCESS_CONTROL" in line:
+            return ["Everyone"]
+        dacl = re.search(r"D:[A-Z_]*(\(.*?)(?:S:[A-Z_]*\(|$)", line.strip())
+        if not dacl:
+            continue
+        found = []
+        for ace in _ACE.findall(dacl.group(1)):
+            parts = ace.split(";")
+            if len(parts) < 6 or parts[0] not in ("A", "OA", "XA", "ZA"):
+                continue
+            sid = parts[5].strip().upper()
+            name = BROAD_SIDS.get(sid) or ("Domain Users" if re.fullmatch(r"S-1-5-21(-\d+){3}-513", sid) else None)
+            if name and name not in found:
+                found.append(name)
+        return found
+    return None
+
+
+def _icacls_sddl(path, runner):
+    """`icacls <path> /save <file>` writes the ACL as SDDL (UTF-16) with
+    SIDs, independent of the display language. Returns (sddl, error)."""
+    import subprocess
+    import tempfile
+    run = runner or (lambda argv: subprocess.run(argv, capture_output=True, timeout=10))
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "acl.txt"
+        try:
+            done = run(["icacls", str(path), "/save", str(out)])
+        except Exception as exc:
+            return None, type(exc).__name__
+        if done.returncode != 0:
+            return None, f"icacls exit {done.returncode}"
+        if not out.exists():
+            return None, "icacls wrote nothing"
+        raw = out.read_bytes()
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        text = raw.decode("utf-16")
+    elif b"\x00" in raw:
+        text = raw.decode("utf-16-le", errors="replace")
+    else:
+        text = raw.decode("utf-8", errors="replace")
+    return text, None
 
 
 def acl_report(path, runner=None):
-    """Windows only, read-only: icacls output and whether a broad group has
-    access. On POSIX the mode bits are reported instead."""
+    """Read-only. POSIX: mode bits. Windows: the DACL as SDDL from icacls,
+    judged by SID. A failed or unreadable query is reported as unchecked
+    (private: None), never as private."""
     path = Path(path)
     if not path.exists():
         return {"path_exists": False}
     if not WINDOWS:
         mode = path.stat().st_mode & 0o777
         return {"path_exists": True, "mode": oct(mode), "private": not mode & 0o077}
-    import subprocess
-    run = runner or (lambda argv: subprocess.run(argv, capture_output=True, text=True, timeout=10))
-    try:
-        done = run(["icacls", str(path)])
-        text = done.stdout or ""
-    except Exception as exc:
-        return {"path_exists": True, "checked": False, "error": type(exc).__name__}
-    broad = [p for p in BROAD_PRINCIPALS if p.lower() in text.lower()]
+    sddl, error = _icacls_sddl(path, runner)
+    broad = broad_access(sddl) if sddl else None
+    if broad is None:
+        return {"path_exists": True, "checked": False, "private": None,
+                "error": error or "no DACL in the icacls output"}
     return {"path_exists": True, "checked": True, "broad_access": broad, "private": not broad}

@@ -352,7 +352,11 @@ icacls state_observe /inheritance:r /grant:r "%USERNAME%:(OI)(CI)F"
 icacls secrets.env
 .venv\Scripts\python.exe -m autotrader service-status --config "C:\...\config.json"
 ```
-`service-status`의 `permissions`에 `Everyone`·`Users`·`Authenticated Users`가 나오면 다시 설정하세요. 이 판정은 icacls 출력을 읽는 방식이며, 실제 Windows에서는 아직 확인되지 않았습니다.
+`service-status`의 `permissions`를 보는 방법:
+- `broad_access`에 `Everyone`·`Users`·`Authenticated Users` 등이 나오면 다시 설정하세요.
+- `checked: false`(`private: null`)는 조회에 실패했다는 뜻이며, 안전하다는 뜻이 아닙니다.
+
+판정은 표시 언어와 무관하게 `icacls <경로> /save`가 저장하는 SID(SDDL)로 합니다. 실제 Windows에서는 아직 확인하지 않았습니다.
 
 **자동 실행 (작업 스케줄러)**
 ```bat

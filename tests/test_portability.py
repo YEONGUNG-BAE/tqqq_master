@@ -160,22 +160,62 @@ class PathTests(unittest.TestCase):
             self.assertIn("health", json.loads(out.getvalue()))
 
 
+def icacls(code=0, sddl=None, raises=None):
+    """Fake `icacls <path> /save <file>`: writes `sddl` (UTF-16) to the file."""
+    def run(argv):
+        if raises:
+            raise raises
+        if sddl is not None:
+            Path(argv[-1]).write_bytes(("secrets.env\r\n" + sddl + "\r\n").encode("utf-16"))
+        return type("Done", (), {"returncode": code})()
+    return run
+
+
 class PermissionReportTests(unittest.TestCase):
-    def test_posix_mode_or_windows_acl_is_reported_not_assumed(self):
+    def test_posix_mode_bits(self):
+        if os.name == "nt":
+            self.skipTest("POSIX mode bits")
         with tempfile.TemporaryDirectory() as tmp:
             f = Path(tmp) / "secrets.env"
-            f.write_text("x")
-            if os.name != "nt":
-                os.chmod(f, 0o644)
-                self.assertFalse(oslock.acl_report(f)["private"])
-                os.chmod(f, 0o600)
-                self.assertTrue(oslock.acl_report(f)["private"])
-            fake = lambda argv: type("R", (), {"stdout": f"{f} BUILTIN\\Users:(RX)\n  DESKTOP\\dad:(F)\n"})()
-            with patch.object(oslock, "WINDOWS", True):
-                report = oslock.acl_report(f, runner=fake)
-            self.assertEqual((report["private"], report["broad_access"]), (False, ["BUILTIN\\Users"]))
-            self.assertEqual(oslock.private(f) if os.name == "nt" else None, None)
+            f.write_text("x", encoding="utf-8")
+            os.chmod(f, 0o644)
+            self.assertFalse(oslock.acl_report(f)["private"])
+            os.chmod(f, 0o600)
+            self.assertTrue(oslock.acl_report(f)["private"])
 
+    def test_windows_private_returns_false_because_chmod_cannot_set_an_acl(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            f = Path(tmp) / "secrets.env"
+            f.write_text("x", encoding="utf-8")
+            if os.name == "nt":
+                self.assertFalse(oslock.private(f))
+            with patch.object(oslock, "WINDOWS", True):
+                self.assertFalse(oslock.private(f))
+
+    def test_windows_acl_is_judged_by_sid_and_a_failed_query_is_never_private(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            f = Path(tmp) / "secrets.env"
+            f.write_text("x", encoding="utf-8")
+            me = "S-1-5-21-111-222-333-1001"
+            cases = {
+                "owner only": (icacls(sddl=f"D:PAI(A;;FA;;;{me})(A;;FA;;;SY)(A;;FA;;;BA)"), True, []),
+                "inherited Users": (icacls(sddl=f"D:AI(A;ID;0x1200a9;;;BU)(A;ID;FA;;;{me})"), False, ["Users"]),
+                "Everyone by full SID": (icacls(sddl=f"D:P(A;;FR;;;S-1-1-0)(A;;FA;;;{me})"), False, ["Everyone"]),
+                "Domain Users": (icacls(sddl="D:P(A;;FR;;;S-1-5-21-9-8-7-513)"), False, ["Domain Users"]),
+                "null DACL": (icacls(sddl="D:NO_ACCESS_CONTROL"), False, ["Everyone"]),
+                "deny only": (icacls(sddl=f"D:P(D;;FA;;;WD)(A;;FA;;;{me})"), True, []),
+            }
+            with patch.object(oslock, "WINDOWS", True):
+                for label, (runner, private, broad) in cases.items():
+                    report = oslock.acl_report(f, runner=runner)
+                    self.assertEqual((report["checked"], report["private"], report["broad_access"]),
+                                     (True, private, broad), label)
+                for label, runner in {"exit code": icacls(code=5, sddl=""), "empty output": icacls(sddl=""),
+                                      "no file": icacls(), "not runnable": icacls(raises=FileNotFoundError()),
+                                      "exit code with text": icacls(code=1332, sddl=f"D:P(A;;FA;;;{me})")}.items():
+                    report = oslock.acl_report(f, runner=runner)
+                    self.assertEqual((report["checked"], report["private"]), (False, None), label)
+                    self.assertNotIn("broad_access", report, label)
 
 
 ENC_PROBE_SKIP = "the child's default encoding is UTF-8; no non-UTF-8 locale to test with"
@@ -231,7 +271,6 @@ class TextEncodingTests(unittest.TestCase):
             self.assertTrue((root / "상태 관찰" / "journal.sqlite").exists())
             report = json.loads(out.stdout.decode(probe.stdout.strip()))
             self.assertEqual(report["alias"], "아버지 계좌")
-
 
 if __name__ == "__main__":
     unittest.main()
