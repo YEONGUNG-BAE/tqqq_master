@@ -187,7 +187,7 @@ def issues_lines(db, now, *, monitor_configured=None):
 
 def _run(argv):
     try:
-        done = subprocess.run(argv, capture_output=True, text=True, timeout=5)
+        done = subprocess.run(argv, capture_output=True, text=True, errors="replace", timeout=5)
         return done.returncode, done.stdout
     except Exception as exc:
         return None, type(exc).__name__

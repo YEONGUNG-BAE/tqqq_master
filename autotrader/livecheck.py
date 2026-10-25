@@ -108,7 +108,7 @@ def _marker_owner(marker):
     if marker is None or not Path(marker).exists():
         return None
     try:
-        return json.loads(Path(marker).read_text())
+        return json.loads(Path(marker).read_text(encoding="utf-8"))
     except Exception:
         return {"plan_id": None}                       # unreadable: treated as owned by someone else
 
@@ -143,7 +143,7 @@ def claim_marker(marker, plan_id, state_dir, journal):
                 continue
             raise Stop(f"Another live check owns this account (plan {owner.get('plan_id')}, state folder "
                        f"{owner.get('state_dir')}); finish or stop it there first. Nothing was sent")
-        with os.fdopen(fd, "w") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(json.dumps({"plan_id": plan_id, "state_dir": str(state_dir or "")}))
             f.flush()
             os.fsync(f.fileno())
@@ -647,7 +647,7 @@ def write_report(state, plan_id, data):
     oslock.private(folder, directory=True)
     path = folder / f"{plan_id}.json"
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2, default=str))
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     oslock.private(tmp)
     oslock.replace(tmp, path)
     return path

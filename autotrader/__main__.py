@@ -32,7 +32,7 @@ def output(value):
 
 def load_config(path, *, allow_unverified_live=False):
     cfg_path = Path(path).resolve()
-    cfg = json.loads(cfg_path.read_text())
+    cfg = json.loads(cfg_path.read_text(encoding="utf-8-sig"))
     state = Path(cfg.get("state_dir", "state_observe")).expanduser()
     if not state.is_absolute():
         state = cfg_path.parent / state
@@ -57,7 +57,7 @@ def load_env(path):
         return
     if os.name == "posix" and path.stat().st_mode & 0o077:
         raise Stop("Set credentials file permissions to 600")
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
@@ -95,7 +95,7 @@ def account_command(args):
         raise Stop("MERITZ_CLIENT_ID is not set for this installation")
     key_fp = account.fingerprint(key)
     now = datetime.now(timezone.utc)
-    with open(state / "run.lock", "a") as lock:
+    with open(state / "run.lock", "a", encoding="utf-8") as lock:
         try:
             oslock.acquire(lock)
         except BlockingIOError:
@@ -135,7 +135,7 @@ def journal_unusable(marker, cfg, now, reason):
     """State DB cannot be trusted: never send anything. Notify at most every 6h
     using only the marker file (the database itself cannot record it)."""
     try:
-        info = json.loads(marker.read_text())
+        info = json.loads(marker.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         info = {}
     info.setdefault("reason", reason or "unknown")
@@ -151,7 +151,7 @@ def journal_unusable(marker, cfg, now, reason):
             except Exception:
                 pass
         info["notified_at"] = now.isoformat()
-    marker.write_text(json.dumps(info))
+    marker.write_text(json.dumps(info), encoding="utf-8")
     oslock.private(marker)
     output({"error": "State database unusable: " + info["reason"] + "; no requests sent"})
     return 1
@@ -345,13 +345,13 @@ def housekeeping(journal, notifier, cfg, broker, schedule, now):
 def run(args):
     cfg, state, settings = load_config(args.config)
     load_env(Path(args.config).resolve().parent / "secrets.env")
-    with open(state / "run.lock", "a") as lock:
+    with open(state / "run.lock", "a", encoding="utf-8") as lock:
         try:
             oslock.acquire(lock)
         except BlockingIOError:
             answer_readonly(state)    # a long order or live check holds it: still answer /status, /issues
             return 0
-        with open(account_lock_path(cfg), "a") as account:
+        with open(account_lock_path(cfg), "a", encoding="utf-8") as account:
             try:
                 oslock.acquire(account)
             except BlockingIOError:
@@ -583,7 +583,7 @@ def live_check_command(args):
         return _stop_report(state, args.plan, "cancel not sent by this command: a running execute/resume "
                             "cancels it on its next tick, or run stop/resume with --confirm-live")
     load_env(Path(args.config).resolve().parent / "secrets.env")
-    with open(state / "run.lock", "a") as lock, open(account_lock_path(cfg), "a") as account:
+    with open(state / "run.lock", "a", encoding="utf-8") as lock, open(account_lock_path(cfg), "a", encoding="utf-8") as account:
         try:
             oslock.acquire(lock)
             oslock.acquire(account)
@@ -711,7 +711,7 @@ def doctor(args):
     from .diagnose import CREDENTIAL_KEYS, collect, render, sanitize
     cfg, state, settings = load_config(args.config, allow_unverified_live=True)
     load_env(Path(args.config).resolve().parent / "secrets.env")
-    with open(state / "run.lock", "a") as lock:
+    with open(state / "run.lock", "a", encoding="utf-8") as lock:
         try:
             oslock.acquire(lock)
         except BlockingIOError:
@@ -729,7 +729,7 @@ def doctor(args):
                                                                   "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
                                                                   "MONITOR_SECRET")]
     try:
-        secrets.append(json.loads((state / "token.json").read_text()).get("token", ""))
+        secrets.append(json.loads((state / "token.json").read_text(encoding="utf-8")).get("token", ""))
     except (OSError, ValueError, AttributeError):
         pass
     report = sanitize(json.loads(json.dumps(report, default=str)), secrets)
@@ -739,7 +739,7 @@ def doctor(args):
     stamp = report["generated_at"][:19].replace(":", "").replace("-", "")
     for name in (f"doctor-{stamp}.json", "latest.json"):
         path = folder / name
-        path.write_text(text)
+        path.write_text(text, encoding="utf-8")
         oslock.private(path)
     if args.json:
         print(text)
@@ -769,7 +769,7 @@ def demo(args):
                 broker.fill(number)
     report = {"network_used": False, "real_orders_sent": False, "steps": rows,
               "final": vars(broker.snapshot()), "actions": journal.rows()}
-    (path / "demo.json").write_text(json.dumps(report, ensure_ascii=False, default=str, indent=2))
+    (path / "demo.json").write_text(json.dumps(report, ensure_ascii=False, default=str, indent=2), encoding="utf-8")
     output(report)
     return 0
 
@@ -793,7 +793,7 @@ def local_status(args):
 
 def resolve(args):
     _, state, _ = load_config(args.config)
-    with open(state / "run.lock", "a") as lock:
+    with open(state / "run.lock", "a", encoding="utf-8") as lock:
         oslock.acquire(lock)
         journal = Journal(state / "journal.sqlite")
         action = journal.db.execute("SELECT * FROM actions WHERE id=?", (args.action,)).fetchone()
@@ -815,7 +815,7 @@ def unlock(args):
     """Clear a hard lock after a person fixed its cause. Refused while any request
     is still in flight: those need `resolve --action` with the account checked."""
     _, state, _ = load_config(args.config)
-    with open(state / "run.lock", "a") as lock:
+    with open(state / "run.lock", "a", encoding="utf-8") as lock:
         try:
             oslock.acquire(lock)
         except BlockingIOError:
@@ -867,7 +867,7 @@ def tax_sync_command(args):
     """Read-only ledger sync: GET requests and token issue only."""
     cfg, state, _ = load_config(args.config, allow_unverified_live=True)
     load_env(Path(args.config).resolve().parent / "secrets.env")
-    with open(state / "run.lock", "a") as lock:
+    with open(state / "run.lock", "a", encoding="utf-8") as lock:
         try:
             oslock.acquire(lock)
         except BlockingIOError:
@@ -896,7 +896,7 @@ def telegram_command(args):
         now = datetime.now(timezone.utc)
         remember_alias(journal, cfg)
         updates = telegram_bot.fetch(journal)              # network wait: no lock held
-        with open(state / "run.lock", "a") as lock:
+        with open(state / "run.lock", "a", encoding="utf-8") as lock:
             try:
                 oslock.acquire(lock)
             except BlockingIOError:

@@ -131,7 +131,7 @@ class Client:
         self.state.mkdir(parents=True, exist_ok=True)
         with oslock.held(self.state / "token.lock", blocking=True):
             try:
-                cached = json.loads(self.token_file.read_text())
+                cached = json.loads(self.token_file.read_text(encoding="utf-8"))
                 if cached.get("key_fingerprint") == self.key_fingerprint and cached["expires"] > time.time() + 120:
                     return cached["token"]
             except (OSError, ValueError, KeyError, TypeError):
@@ -144,7 +144,7 @@ class Client:
             token = response["access_token"]
             tmp = self.token_file.with_suffix(".tmp")
             fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(fd, "w") as f:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump({"token": token, "expires": time.time() + int(response["expires_in"]),
                            "key_fingerprint": self.key_fingerprint}, f)
             oslock.private(tmp)

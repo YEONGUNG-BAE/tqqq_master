@@ -253,7 +253,7 @@ def main():
     p.add_argument("command", choices=["serve", "check"])
     p.add_argument("--config", default="monitor.json")
     args = p.parse_args()
-    cfg = json.loads(Path(args.config).read_text())
+    cfg = json.loads(Path(args.config).read_text(encoding="utf-8-sig"))
     secret = os.environ.get("MONITOR_SECRET", "")
     if len(secret) < 32:
         raise SystemExit("Set MONITOR_SECRET (32+ characters) in the monitor host environment")

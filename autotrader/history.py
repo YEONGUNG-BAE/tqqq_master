@@ -83,7 +83,7 @@ def refresh(broker, path, schedule, expected):
     if any(day not in history for day in gap):
         raise Stop("Missing intervening session; cannot replay signal state across history gap")
     tmp = Path(path).with_suffix(".tmp")
-    with open(tmp, "w", newline="") as f:
+    with open(tmp, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["date", "close"])
         writer.writerows(sorted(history.items()))

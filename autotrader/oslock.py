@@ -61,7 +61,7 @@ def release(handle):
 @contextmanager
 def held(path, blocking=False):
     """Open `path` and hold its exclusive lock for the block."""
-    with open(path, "a+") as handle:
+    with open(path, "a+", encoding="utf-8") as handle:
         acquire(handle, blocking)
         try:
             yield handle

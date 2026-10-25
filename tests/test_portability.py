@@ -177,5 +177,61 @@ class PermissionReportTests(unittest.TestCase):
             self.assertEqual(oslock.private(f) if os.name == "nt" else None, None)
 
 
+
+ENC_PROBE_SKIP = "the child's default encoding is UTF-8; no non-UTF-8 locale to test with"
+
+
+class TextEncodingTests(unittest.TestCase):
+    def test_every_text_file_access_in_the_program_names_its_encoding(self):
+        import ast
+        sources = sorted((ROOT / "autotrader").glob("*.py")) + sorted(ROOT.glob("install_*.py"))
+        missing = []
+        for path in sources:
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                name = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else ""
+                if name not in ("open", "read_text", "write_text", "fdopen"):
+                    continue
+                if isinstance(func, ast.Attribute) and name == "open" and getattr(func.value, "id", "") == "os":
+                    continue                                              # os.open: a descriptor, no text
+                mode = next((a.value for a in node.args[1:2] if isinstance(a, ast.Constant)), None)
+                mode = next((k.value.value for k in node.keywords if k.arg == "mode"), mode)
+                if isinstance(mode, str) and "b" in mode:
+                    continue
+                if not any(k.arg == "encoding" for k in node.keywords):
+                    missing.append(f"{path.name}:{node.lineno}")
+        self.assertEqual(missing, [])
+
+    def test_utf8_config_and_secrets_with_korean_text_load_under_a_cp949_default(self):
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("MERITZ_", "PYTHON"))}
+        env.update(LC_ALL="ko_KR.CP949", LANG="ko_KR.CP949", PYTHONUTF8="0")
+        probe = subprocess.run([sys.executable, "-c", "import locale; print(locale.getencoding())"],
+                               capture_output=True, text=True, env=env, timeout=30)
+        if probe.stdout.strip().lower().replace("-", "") in ("utf8", ""):
+            self.skipTest(ENC_PROBE_SKIP)
+        from test_doctor import SECRET_ENV
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "아버지 설치"
+            root.mkdir()
+            config = {"state_dir": "상태 관찰", "notifications": False, "account_lock_dir": str(root / "잠금"),
+                      "account": {"alias": "아버지 계좌"}}
+            # Notepad may add a BOM; both forms must load.
+            (root / "config.json").write_bytes(b"\xef\xbb\xbf" + json.dumps(config, ensure_ascii=False).encode())
+            (root / "secrets.env").write_bytes(("# 아버지 계좌 키\n" + "".join(
+                f"{k}={v}\n" for k, v in SECRET_ENV.items())).encode("utf-8"))
+            if os.name != "nt":
+                os.chmod(root / "secrets.env", 0o600)
+            for command in (["status"], ["account", "show"]):
+                out = subprocess.run([sys.executable, "-W", "ignore", "-m", "autotrader", *command,
+                                      "--config", str(root / "config.json")],
+                                     capture_output=True, cwd=ROOT, env=env, timeout=120)
+                self.assertEqual(out.returncode, 0, (command, out.stdout[-500:], out.stderr[-1500:]))
+            self.assertTrue((root / "상태 관찰" / "journal.sqlite").exists())
+            report = json.loads(out.stdout.decode(probe.stdout.strip()))
+            self.assertEqual(report["alias"], "아버지 계좌")
+
+
 if __name__ == "__main__":
     unittest.main()

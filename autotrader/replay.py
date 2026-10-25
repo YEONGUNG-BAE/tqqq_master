@@ -143,7 +143,7 @@ def replay(scenario_path, state, *, max_sessions=None):
     path = Path(state).resolve()
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
     oslock.private(path, directory=True)
-    with open(path/"run.lock", "a") as lock:
+    with open(path/"run.lock", "a", encoding="utf-8") as lock:
         try:
             oslock.acquire(lock)
         except BlockingIOError as exc:
@@ -218,7 +218,7 @@ def _replay_locked(scenario, fingerprint, path, max_sessions):
                       signal=journal.meta("signal"), final=vars(broker.snapshot()),
                       actions=journal.rows(), scenario_sha256=fingerprint)
         tmp = path/"replay.tmp"
-        tmp.write_text(json.dumps(report, ensure_ascii=False, default=str, indent=2))
+        tmp.write_text(json.dumps(report, ensure_ascii=False, default=str, indent=2), encoding="utf-8")
         oslock.replace(tmp, path/"replay.json")
         return report
     finally:
