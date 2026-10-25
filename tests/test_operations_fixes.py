@@ -160,9 +160,14 @@ class OccurrenceTests(Base):
         notifier.send("lock", "x", "잠금 2", OPEN + timedelta(hours=7))  # recurs before the copy got out
         self.down = False
         notifier.retry_pending(OPEN + timedelta(hours=8))
-        self.assertIn("잠금 2", self.telegram[-1])
-        self.assertIn("발생 10-16 05:30 KST", self.telegram[-1])
-        self.assertNotIn("이미 해소됨", self.telegram[-1])
+        # Two incidents, two late copies: the open one first, undated by the old resolution.
+        current = [t for t in self.telegram if "잠금 2" in t]
+        self.assertEqual(len(current), 1)
+        self.assertEqual(self.telegram[0], current[0])
+        self.assertIn("발생 10-16 05:30 KST", current[0])
+        self.assertNotIn("이미 해소됨", current[0])
+        old = [t for t in self.telegram if "잠금 1" in t]
+        self.assertIn("이미 해소됨 10-15 22:40 KST", old[0])
 
     def test_a_copy_of_an_occurrence_resolved_later_still_says_so(self):
         notifier = self.notifier()

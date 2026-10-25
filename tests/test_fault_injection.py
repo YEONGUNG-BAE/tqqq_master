@@ -24,7 +24,7 @@ from autotrader.core import (ACCEPTED, CANCELLING, DONE, NOT_SENT, PARTIAL, PREP
                              D, Engine, Journal, Locked, NotSent, OrderStatus, Quote, Refused, RefusedUnconfirmed,
                              Settings, Stop, UnknownOutcome, set_lock)
 from autotrader.meritz import AuthError, Client, KST, Meritz
-from autotrader.notify import Notifier, scrub, telegram_channel
+from autotrader.notify import Notifier, current_record, scrub, telegram_channel
 from autotrader.paper import Paper
 from autotrader.signal import DEFENSIVE_SYMBOL
 from test_doctor import APIS, KRW_MORNING, SECRET_ENV, TOKEN, US_OPEN, FakeMeritz, Harness
@@ -1178,7 +1178,7 @@ class NotifierTests(unittest.TestCase):
         self.assertFalse(n.send("lock", "x", "locked", NOW + timedelta(hours=1)))
         self.assertTrue(n.send("lock", "x", "locked", NOW + timedelta(hours=7)))
         self.assertEqual((len(mac), len(telegram)), (2, 3))
-        status = self.journal.meta("notified")["lock:x"]["channels"]
+        status = current_record(self.journal, "lock:x")["channels"]      # records are kept per incident
         self.assertEqual({k: v["ok"] for k, v in status.items()}, {"macos": True, "telegram": True})
 
     def test_failed_one_time_message_is_resent_without_the_event_repeating(self):

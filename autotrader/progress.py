@@ -126,7 +126,8 @@ REMOTE_CHANNELS = ("telegram", "smtp")
 
 
 def delivered(journal, key):
-    record = (journal.meta("notified", {}) or {}).get(key) or {}
+    from .notify import current_record
+    record = current_record(journal, key)
     return any(c.get("ok") for name, c in (record.get("channels") or {}).items() if name in REMOTE_CHANNELS)
 
 

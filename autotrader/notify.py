@@ -51,9 +51,8 @@ def _kst_text(at):
 
 
 def _late_text(entry, resolved_at):
-    """A message re-sent after an outage says when THIS occurrence happened, and
-    that it is resolved only if the resolution came after it (a recurrence never
-    borrows the previous occurrence's resolution)."""
+    """A message re-sent after an outage says when ITS incident happened, and
+    that it is resolved only when that same incident was resolved."""
     occurred = entry.get("occurred", entry["first"])
     head = f"[재전송 · 발생 {_kst_text(occurred)} KST"
     if resolved_at and datetime.fromisoformat(resolved_at) >= datetime.fromisoformat(occurred):
@@ -61,13 +60,58 @@ def _late_text(entry, resolved_at):
     return head + "]\n" + entry["text"]
 
 
+# ---- incidents ----
+# One notification key (category:code) names a KIND of problem. An incident is
+# one occurrence of it: it opens at the first notice and stays open while the
+# problem continues (repeated notices are the same incident); once resolved, the
+# next notice of the same kind opens a new incident. Dedup records, pending
+# retries and the resolution are all kept per incident ("key#id").
+
+def _incident_key(key, incident):
+    return f"{key}#{incident['id']}"
+
+
+def _open_incident(journal, key, now):
+    """The current incident of `key`, registering a new one first when there is
+    none or the last one is resolved (before any suppression decision)."""
+    incidents = journal.meta("incidents", {}) or {}
+    current = incidents.get(key)
+    if current is not None and not current.get("resolved"):
+        return current
+    current = {"id": (current or {}).get("id", 0) + 1, "started": now.isoformat(), "resolved": None}
+    incidents[key] = current
+    sent = journal.meta("notified", {}) or {}
+    if current["id"] == 1 and key in sent:
+        # A record written before incidents existed belongs to this incident:
+        # adopted, so an ongoing problem is not announced again after an upgrade.
+        sent[_incident_key(key, current)] = sent.pop(key)
+        journal.put_meta("notified", sent)
+    journal.put_meta("incidents", incidents)
+    return current
+
+
+def current_record(journal, key):
+    """Delivery record of the current incident of `key` (empty if none)."""
+    current = (journal.meta("incidents", {}) or {}).get(key)
+    if current is None:
+        return {}
+    return (journal.meta("notified", {}) or {}).get(_incident_key(key, current)) or {}
+
+
 def mark_resolved(journal, key, now):
-    """Remember that an incident (notification key) is over; kept for 8 days."""
-    resolved = journal.meta("resolved_incidents", {}) or {}
-    resolved[key] = now.isoformat()
+    """Close the open incident of `key`; its resolution time is kept for its
+    own late copies only. Nothing happens when no incident is open."""
+    incidents = journal.meta("incidents", {}) or {}
+    current = incidents.get(key)
+    if current is None or current.get("resolved"):
+        return
+    current["resolved"] = now.isoformat()
+    log = journal.meta("resolved_incidents", {}) or {}
+    log[_incident_key(key, current)] = now.isoformat()
     cutoff = now - timedelta(days=8)
-    journal.put_meta("resolved_incidents", {k: v for k, v in resolved.items()
-                                            if datetime.fromisoformat(v) >= cutoff})
+    journal.put_meta("resolved_incidents", {k: v for k, v in log.items() if datetime.fromisoformat(v) >= cutoff})
+    journal.put_meta("incidents", {k: v for k, v in incidents.items()
+                                   if not v.get("resolved") or datetime.fromisoformat(v["resolved"]) >= cutoff})
 
 
 def scrub(text, secrets=()):
@@ -170,7 +214,9 @@ class Notifier:
         """Per-channel bookkeeping: a channel that delivered is quiet for the
         category window; a channel that failed is retried after 30 minutes, even
         when another channel succeeded."""
-        key = f"{category}:{code}"
+        base = f"{category}:{code}"
+        incident = _open_incident(self.j, base, now)        # registered before any suppression decision
+        key = _incident_key(base, incident)
         sent = self.j.meta("notified", {})
         record = sent.get(key) or {}
         if "channels" not in record and record.get("at"):
@@ -207,7 +253,7 @@ class Notifier:
                 failed.append({"channel": name, "error_type": type(exc).__name__})
                 status[name] = {"at": now.isoformat(), "ok": False}
         sent[key] = {"at": now.isoformat(), "channels": status}
-        self._remember_failures(key, category, text, delivered, failed, now)
+        self._remember_failures(key, category, text, delivered, failed, now, incident=(base, incident))
         cutoff = now - timedelta(days=8)
         sent = {k: v for k, v in sent.items() if datetime.fromisoformat(v["at"]) >= cutoff}
         self.j.put_meta("notified", sent)
@@ -215,16 +261,17 @@ class Notifier:
                                       "delivered": delivered, "failed": failed}, now)
         return True
 
-    def _remember_failures(self, key, category, text, delivered, failed, now):
-        """Persist the exact text for channels that failed, so the next run can
-        retry them even if the caller never raises the same event again."""
+    def _remember_failures(self, key, category, text, delivered, failed, now, incident=None):
+        """Persist the exact text for channels that failed, per incident, so the
+        next run can retry them even if the caller never raises it again."""
         pending = self.j.meta("notify_pending", {})
         entry = pending.get(key) or {"category": category, "text": text, "channels": [],
                                      "first": now.isoformat(), "attempts": 0}
+        if incident is not None:
+            entry.update(base=incident[0], incident=incident[1]["id"], occurred=incident[1]["started"])
         entry["channels"] = sorted((set(entry["channels"]) - set(delivered)) | {f["channel"] for f in failed})
         if failed:
-            # `occurred` is this occurrence's time; a recurrence replaces it.
-            entry.update(text=text, occurred=now.isoformat(), attempts=entry["attempts"] + 1,
+            entry.update(text=text, attempts=entry["attempts"] + 1,
                          retry_at=(now + RETRY_AFTER_FAILURE).isoformat())
         if entry["channels"]:
             pending[key] = entry
@@ -241,17 +288,33 @@ class Notifier:
                 return 0
             channels = default_channels() if self.channels is None else self.channels
             sent = self.j.meta("notified", {})
+            incidents = self.j.meta("incidents", {}) or {}
+            resolved_log = self.j.meta("resolved_incidents", {}) or {}
             attempted = 0
-            for key, entry in list(pending.items()):
+
+            def is_open(entry):
+                current = incidents.get(entry.get("base"))
+                return bool(current) and current["id"] == entry.get("incident") and not current.get("resolved")
+            # Open incidents first, newest first: the present problem is never
+            # queued behind an older, already resolved one.
+            by_time = sorted(pending.items(), key=lambda kv: kv[1].get("occurred", kv[1]["first"]))
+            order = [kv for kv in by_time if is_open(kv[1])][::-1] + [kv for kv in by_time if not is_open(kv[1])]
+            # A channel tried in this pass (some entry is due on it) is tried for
+            # every entry, open incidents first; a channel that fails is not
+            # retried again in the same pass.
+            trying = {n for _, e in order if now >= datetime.fromisoformat(e["retry_at"]) for n in e["channels"]}
+            broken = set()
+            for key, entry in order:
                 if now - datetime.fromisoformat(entry["first"]) >= RETRY_GIVE_UP:
                     self.j.event("notification_dropped", {"key": key, "channels": entry["channels"]}, now)
                     pending.pop(key)
                     continue
-                if now < datetime.fromisoformat(entry["retry_at"]):
+                due = [n for n in entry["channels"] if n in trying and n not in broken]
+                if not due:
                     continue
                 delivered, failed = [], []
-                text = _late_text(entry, (self.j.meta("resolved_incidents", {}) or {}).get(key))
-                for name in entry["channels"]:
+                text = _late_text(entry, resolved_log.get(key))
+                for name in due:
                     channel = channels.get(name)
                     if channel is None:          # channel no longer configured
                         delivered.append(name)
@@ -262,15 +325,17 @@ class Notifier:
                         delivered.append(name)
                     except Exception as exc:
                         failed.append({"channel": name, "error_type": type(exc).__name__})
+                        broken.add(name)
                 record = sent.setdefault(key, {"at": now.isoformat(), "channels": {}})
                 record.setdefault("channels", {})
                 for name in delivered:
                     record["channels"][name] = {"at": now.isoformat(), "ok": True}
                 for f in failed:
                     record["channels"][f["channel"]] = {"at": now.isoformat(), "ok": False}
-                entry["channels"] = [f["channel"] for f in failed]
+                entry["channels"] = [n for n in entry["channels"] if n not in delivered]
                 entry["attempts"] += 1
-                entry["retry_at"] = (now + RETRY_AFTER_FAILURE).isoformat()
+                if failed:
+                    entry["retry_at"] = (now + RETRY_AFTER_FAILURE).isoformat()
                 if not entry["channels"]:
                     pending.pop(key)
                 self.j.event("notification_retry", {"key": key, "delivered": delivered, "failed": failed}, now)
