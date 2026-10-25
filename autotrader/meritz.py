@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 from .core import (CLOCK_SKEW_SECONDS, D, FXQuote, NotSent, OrderStatus, PendingConfirmation, Quote, Refused,
                    RefusedUnconfirmed,
                    Rejected, ReservationLookup, Snapshot, Stop, UnknownOutcome, money)
-from . import instruments, oslock
+from . import account, instruments, oslock
 from .signal import SIGNAL_SYMBOL
 
 KST = ZoneInfo("Asia/Seoul")
@@ -231,15 +231,13 @@ class Client:
 
 
 class Meritz:
-    def __init__(self, client: Client, journal, instrument_markets=None):
+    def __init__(self, client: Client, journal, instrument_markets=None, account_cfg=None):
         self.client, self.j = client, journal
         self.instrument_markets = dict(instrument_markets or {})
         fingerprint = getattr(client, "key_fingerprint", None)
         if fingerprint:
-            bound = journal.meta("broker_key_fingerprint")
-            if bound and bound != fingerprint:
-                raise Stop("State belongs to a different API key; use the matching account state")
-            journal.put_meta("broker_key_fingerprint", fingerprint)
+            # Before any request: this installation's key and this journal's key.
+            account.bind(journal, fingerprint, account_cfg)
 
     def _get(self, path, **query):
         response = self.client.call("GET", path, query=query or None)

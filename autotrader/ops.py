@@ -28,6 +28,11 @@ def _meta(db, key, default=None):
     return json.loads(row[0]) if row else default
 
 
+def _alias(db):
+    alias = _meta(db, "account_alias")
+    return " · " + alias if alias else ""
+
+
 def _kst(text_or_dt):
     if not text_or_dt:
         return "기록 없음"
@@ -70,7 +75,8 @@ def status_lines(db, now):
     hold = _meta(db, "active_hold")
     prog = _meta(db, "switch_progress") or {}
     total, unknown, owned = _pending(db)
-    lines = [f"[상태] 응답 기준 {_kst(now)} KST (Mac 로컬 기록, 증권사 추가 조회 없음)"]
+    alias = _meta(db, "account_alias")
+    lines = [f"[상태{' · ' + alias if alias else ''}] 응답 기준 {_kst(now)} KST (이 컴퓨터의 로컬 기록, 증권사 추가 조회 없음)"]
     if health.get("at"):
         stale = now - datetime.fromisoformat(health["at"]) > STALE_AFTER
         outcome = "잠금" if health.get("locked") else ("오류·보류" if health.get("error") else "정상 종료")
@@ -168,8 +174,8 @@ def issues(db, now, *, monitor_configured=None):
 def issues_lines(db, now, *, monitor_configured=None):
     found = issues(db, now, monitor_configured=monitor_configured)
     if not found:
-        return [f"[문제] {_kst(now)} KST 기준 확인된 미해결 문제가 없습니다. (Mac 로컬 기록 기준)"]
-    lines = [f"[문제] {_kst(now)} KST 기준 {len(found)}건 (Mac 로컬 기록 기준)"]
+        return [f"[문제{_alias(db)}] {_kst(now)} KST 기준 확인된 미해결 문제가 없습니다. (이 컴퓨터의 로컬 기록 기준)"]
+    lines = [f"[문제{_alias(db)}] {_kst(now)} KST 기준 {len(found)}건 (이 컴퓨터의 로컬 기록 기준)"]
     for what, unknown, auto, user in found:
         lines += [f"- {what}", f"  확인 안 된 것: {unknown}", f"  자동: {auto}", f"  사용자: {user}"]
     return lines

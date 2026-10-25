@@ -13,7 +13,7 @@ from .history import recompute, refresh
 from .signal import STRATEGY_VERSION
 from .meritz import AuthError, Client, Meritz
 from .notify import Notifier, default_channels, mark_resolved, scrub, secret_values
-from . import books, heartbeat, livecheck, ops, oslock, progress, tax, telegram_bot
+from . import account, books, heartbeat, livecheck, ops, oslock, progress, tax, telegram_bot
 from .tax_reserve import TaxPlan
 from .paper import Paper
 from .schedule import KST, Schedule, confirm_regular_session
@@ -39,6 +39,7 @@ def load_config(path, *, allow_unverified_live=False):
     state.mkdir(parents=True, exist_ok=True, mode=0o700)
     oslock.private(state, directory=True)
     settings = Settings(**cfg.get("execution", {}))
+    account.validate_config(cfg.get("account"))
     if settings.mode == "paper":
         raise Stop("Paper mode uses the offline demo command; run supports observe/live")
     if settings.mode == "live" and not allow_unverified_live:
@@ -76,6 +77,48 @@ def account_lock_path(cfg):
     key = os.environ.get("MERITZ_CLIENT_ID", "")
     name = hashlib.sha256(key.encode()).hexdigest()[:16] if key else "unconfigured"
     return folder / f"account-{name}.lock"
+
+
+def remember_alias(journal, cfg):
+    """Display alias of this installation (validated: no account numbers)."""
+    alias = account.validate_alias((cfg.get("account") or {}).get("alias"))
+    if journal.meta("account_alias") != alias:
+        journal.put_meta("account_alias", alias)
+
+
+def account_command(args):
+    """show (local, no network) / link --confirm / relink --confirm-same-account --note."""
+    cfg, state, _ = load_config(args.config, allow_unverified_live=True)
+    load_env(Path(args.config).resolve().parent / "secrets.env")
+    key = os.environ.get("MERITZ_CLIENT_ID", "")
+    if not key:
+        raise Stop("MERITZ_CLIENT_ID is not set for this installation")
+    key_fp = account.fingerprint(key)
+    now = datetime.now(timezone.utc)
+    with open(state / "run.lock", "a") as lock:
+        try:
+            oslock.acquire(lock)
+        except BlockingIOError:
+            raise Stop("A run holds this state; retry shortly") from None
+        journal = Journal(state / "journal.sqlite")
+        try:
+            if args.action == "link":
+                if not args.confirm:
+                    raise Stop("link needs --confirm after checking this journal belongs to this account")
+                account.link(journal, key_fp, now)
+            elif args.action == "relink":
+                if not args.confirm_same_account:
+                    raise Stop("relink needs --confirm-same-account and --note")
+                account.relink(journal, key_fp, now, args.note)
+            bound = journal.meta("broker_key_fingerprint")
+            output({"loaded_key_fingerprint": key_fp[:16], "config_key_fingerprint":
+                    (cfg.get("account") or {}).get("key_fingerprint"), "journal_binding": journal.meta("account_binding"),
+                    "journal_matches_loaded_key": (bound == key_fp) if bound else None,
+                    "alias": (cfg.get("account") or {}).get("alias"),
+                    "verified_scope": "API key fingerprint only: the Meritz REST API returns no account number"})
+        finally:
+            journal.db.close()
+    return 0
 
 
 def account_marker_path(cfg):
@@ -347,6 +390,7 @@ def run_locked(cfg, state, settings):
         journal = Journal(state / "journal.sqlite")
     except JournalError as exc:
         return journal_unusable(marker, cfg, now, str(exc))
+    remember_alias(journal, cfg)
     notifier = Notifier(journal, enabled=cfg.get("notifications", True))
     notifier.retry_pending(now)   # failed one-time messages are not lost if the event never repeats
     broker = schedule = None
@@ -359,7 +403,7 @@ def run_locked(cfg, state, settings):
             # no test shares left; the general engine sends nothing meanwhile.
             raise Stop(f"Live check in progress ({check['source']}); the general run sends nothing until it ends")
         client = Client(state, allow_mutations=settings.mode == "live")
-        broker = Meritz(client, journal, settings.instrument_markets)
+        broker = Meritz(client, journal, settings.instrument_markets, cfg.get("account"))
         schedule = Schedule(now)
         expected = schedule.expected_close(now)
         history_path = state / "qqq_close.csv"
@@ -573,7 +617,7 @@ def live_check_locked(args, cfg, state, settings, journal):
     live = args.action in ("execute", "resume", "stop")
     client = Client(state, allow_mutations=live)
     if args.action == "plan":
-        broker = Meritz(client, journal, settings.instrument_markets)
+        broker = Meritz(client, journal, settings.instrument_markets, cfg.get("account"))
         plan, reasons = livecheck.create_plan(journal, broker, settings, budget=args.budget_usd, now=now,
                                               tax_reserved_usd=tax_reserved_usd(journal, cfg, now), state_dir=state)
         if plan:
@@ -587,8 +631,9 @@ def live_check_locked(args, cfg, state, settings, journal):
         raise Stop(f"Plan is {row['status']}; execute accepts a fresh plan only")
     if args.action in ("resume", "stop") and row["status"] not in livecheck.BLOCKING:
         raise Stop(f"Plan is {row['status']}; nothing to resume (a new plan is needed for new trades)")
+    remember_alias(journal, cfg)
     client.mutation_filter = livecheck.transport_filter(journal, args.plan, row["plan"]["routes"])
-    broker = Meritz(client, journal, settings.instrument_markets)
+    broker = Meritz(client, journal, settings.instrument_markets, cfg.get("account"))
     notifier = Notifier(journal, enabled=cfg.get("notifications", True))
     engine = Engine(broker, journal, settings)
     engine.clock = lambda: datetime.now(timezone.utc)
@@ -676,7 +721,7 @@ def doctor(args):
             report = collect(cfg=cfg, state=state, settings=settings, now=now, schedule=Schedule(now),
                              journal=journal, root=ROOT,
                              client_factory=lambda: Client(state, allow_mutations=False),
-                             broker_factory=lambda client: Meritz(client, journal, settings.instrument_markets))
+                             broker_factory=lambda client: Meritz(client, journal, settings.instrument_markets, cfg.get("account")))
         finally:
             journal.db.close()
     secrets = [os.environ.get(k, "") for k in CREDENTIAL_KEYS + ("MERITZ_MAC_ADDRESS", "ALERT_SMTP_PASSWORD",
@@ -830,7 +875,7 @@ def tax_sync_command(args):
         try:
             tax.ensure_schema(journal.db)
             now = datetime.now(timezone.utc)
-            broker = Meritz(Client(state, allow_mutations=False), journal)
+            broker = Meritz(Client(state, allow_mutations=False), journal, account_cfg=cfg.get("account"))
             schedule = Schedule(now)
             result = tax.sync(journal.db, broker, [s[0] for s in schedule.sessions], now,
                               str((cfg.get("tax") or {}).get("ledger_start", "00000000")))
@@ -848,6 +893,7 @@ def telegram_command(args):
     journal = Journal(state / "journal.sqlite")
     try:
         now = datetime.now(timezone.utc)
+        remember_alias(journal, cfg)
         updates = telegram_bot.fetch(journal)              # network wait: no lock held
         with open(state / "run.lock", "a") as lock:
             try:
@@ -879,6 +925,12 @@ def main():
     os.umask(0o077)
     p = argparse.ArgumentParser(description="Meritz DD15/12 automation; defaults to read-only observation")
     sub = p.add_subparsers(dest="command", required=True)
+    s = sub.add_parser("account", help="Which account this installation is bound to (key fingerprint)")
+    s.add_argument("action", choices=["show", "link", "relink"])
+    s.add_argument("--config", default="config.json")
+    s.add_argument("--confirm", action="store_true", help="link: bind a journal that has records but no binding")
+    s.add_argument("--confirm-same-account", action="store_true", help="relink: the same account's key was reissued")
+    s.add_argument("--note", help="relink: how you confirmed it is the same account")
     s = sub.add_parser("live-check", help="Small real-account check of TQQQ/SGOV with a named USD budget; "
                                            "existing holdings are never ordered")
     s.add_argument("action", choices=["plan", "execute", "resume", "stop", "status"])
@@ -913,7 +965,8 @@ def main():
         return {"run": run, "doctor": doctor, "status": local_status, "resolve": resolve,
                 "unlock": unlock, "demo": demo, "tax": tax_command, "tax-sync": tax_sync_command,
                 "telegram": telegram_command, "live-check": live_check_command,
-                "service-status": service_status_command}[args.command](args)
+                "service-status": service_status_command,
+                "account": account_command}[args.command](args)
     except (Stop, OSError, ValueError) as exc:
         output({"error": str(exc) if isinstance(exc, Stop) else type(exc).__name__})
         return 1

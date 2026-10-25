@@ -287,7 +287,8 @@ class Notifier:
             due[name] = channel
         if not due and (self.enabled or record):
             return False
-        lines = [f"[{TITLES[category]}] {message}"]
+        alias = self.j.meta("account_alias")          # e.g. "아버지 계좌": which installation is speaking
+        lines = [f"[{TITLES[category]}{' · ' + alias if alias else ''}] {message}"]
         if required:
             lines.append("필요한 조치: " + required)
         if FOOTERS.get(category):

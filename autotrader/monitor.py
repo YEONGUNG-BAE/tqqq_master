@@ -192,6 +192,11 @@ class Monitor:
                     self.sleep(min(10, 2 ** attempt))
         return None
 
+    def _name(self, key):
+        """Installation alias from monitor config (`instance_names`), else the id."""
+        instance = key.split(":")[0]
+        return (self.cfg.get("instance_names") or {}).get(instance, instance)
+
     def check(self, now):
         active = self.evaluate(now)
         keys = {k for k, _ in active}
@@ -202,14 +207,14 @@ class Monitor:
             due = row is None or not row[1] or row[0] is None or now - datetime.fromisoformat(row[0]) >= repeat
             if not due:
                 continue
-            channel = self._deliver(f"[외부 감시] {MESSAGES[kind]} ({key.split(':')[0]})")
+            channel = self._deliver(f"[외부 감시] {MESSAGES[kind]} ({self._name(key)})")
             self.db.execute("INSERT INTO alerts VALUES (?,?,?,?) ON CONFLICT(key) DO UPDATE SET last_sent=excluded.last_sent, "
                             "delivered=excluded.delivered", (key, now.isoformat(), now.isoformat(), 1 if channel else 0))
             sent.append((key, channel))
         for (key,) in self.db.execute("SELECT key FROM alerts").fetchall():
             if key not in keys:
                 kind = key.split(":", 1)[1]
-                if self._deliver(f"[외부 감시] 해소됨: {MESSAGES.get(kind, kind)} ({key.split(':')[0]})"):
+                if self._deliver(f"[외부 감시] 해소됨: {MESSAGES.get(kind, kind)} ({self._name(key)})"):
                     self.db.execute("DELETE FROM alerts WHERE key=?", (key,))
                 sent.append((key, "resolved"))
         self.db.commit()
