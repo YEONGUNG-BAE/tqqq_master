@@ -143,3 +143,97 @@ class LegacyStateTests(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RetrySpacingTests(Base):
+    def setUp(self):
+        self.attempts = []
+        super().setUp()
+
+    def tg(self, text):
+        self.attempts.append(text)                           # every attempt, across restarts
+        super().tg(text)
+
+    def test_a_failing_channel_keeps_its_retry_time_even_with_an_overdue_old_entry(self):
+        attempts = self.attempts
+        self.down = True
+        self.run_minute(0)                                   # incident 1 fails (1 attempt)
+        self.resolve(10)
+        self.run_minute(20)                                  # incident 2 fails (1 attempt)
+        self.assertEqual(len(attempts), 2)
+        self.run_minute(31)                                  # incident 1 due: one try on the channel, fails
+        tried_at_31 = len(attempts)
+        for minute in range(32, 61):
+            self.run_minute(minute)
+        self.assertEqual(len(attempts), tried_at_31)         # nothing until the channel's retry time
+        self.down = False
+        self.run_minute(61)
+        self.assertTrue(self.telegram[0].startswith("[재전송 · 발생 10-15 22:50 KST]"))   # current first
+        self.assertEqual(len(self.telegram), 2)
+
+
+class RetrySpacingAcrossRestartsTests(RetrySpacingTests):
+    restart_each_step = True
+
+
+LEGACY = {
+    "notified": {"hold:reservation": {"at": "2026-10-15T13:30:00+00:00", "channels": {
+        "macos": {"at": "2026-10-15T13:30:00+00:00", "ok": True},
+        "telegram": {"at": "2026-10-15T13:30:00+00:00", "ok": False}}}},
+    "notify_pending": {"hold:reservation": {"category": "hold", "text": "[보류] 예약주문 보류", "channels": ["telegram"],
+                                            "first": "2026-10-15T13:30:00+00:00", "attempts": 1,
+                                            "retry_at": "2026-10-15T14:00:00+00:00"}},
+    "resolved_incidents": {"hold:reservation": "2026-10-15T13:40:00+00:00"},
+}
+
+
+class LegacyMigrationTests(Base):
+    def seed(self):
+        for key, value in LEGACY.items():
+            self.journal.put_meta(key, value)
+
+    def test_delivery_pending_and_resolution_move_into_one_incident(self):
+        self.seed()
+        self.notifier.retry_pending(self.at(31))
+        self.assertEqual(len(self.telegram), 1)
+        self.assertTrue(self.telegram[0].startswith("[재전송 · 발생 10-15 22:30 KST · 이미 해소됨 10-15 22:40 KST]"))
+        record = self.journal.meta("notified")["hold:reservation#1"]
+        self.assertTrue(record["channels"]["telegram"]["ok"])
+        self.assertEqual(self.journal.meta("notify_pending"), {})
+        self.assertNotIn("hold:reservation", self.journal.meta("notified"))
+        self.run_minute(32)                                  # the same error now: a new incident, announced
+        self.assertEqual(len(self.telegram), 2)
+        self.assertEqual(self.telegram[-1].splitlines()[0], "[보류] 예약주문 보류")
+        self.assertEqual(self.journal.meta("incidents")["hold:reservation"]["id"], 2)
+
+    def test_migration_applies_once_even_when_run_again(self):
+        self.seed()
+        from autotrader.notify import migrate_legacy
+        migrate_legacy(self.journal)
+        snapshot = {k: self.journal.meta(k) for k in ("notified", "notify_pending", "resolved_incidents", "incidents")}
+        migrate_legacy(self.journal)
+        self.open()
+        migrate_legacy(self.journal)
+        self.assertEqual({k: self.journal.meta(k) for k in snapshot}, snapshot)
+
+    def test_kill_in_the_middle_of_the_migration_leaves_the_old_records_and_reruns_once(self):
+        import json
+        import os
+        import subprocess
+        import sys
+        self.seed()
+        self.journal.db.close()
+        root = Path(__file__).resolve().parent.parent
+        child = (f"import os, sys\nsys.path.insert(0, {str(root)!r})\nfrom autotrader.core import Journal\n"
+                 "from autotrader import notify\nj = Journal(sys.argv[1])\noriginal = j.put_meta\n"
+                 "def killer(key, value):\n    original(key, value)\n    if key == 'notify_pending':\n        os._exit(3)\n"
+                 "j.put_meta = killer\nnotify.migrate_legacy(j)\n")
+        result = subprocess.run([sys.executable, "-W", "ignore", "-c", child, str(self.path)], capture_output=True,
+                                text=True, timeout=60)
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.journal = None
+        self.open()
+        self.assertEqual(self.journal.meta("notify_pending"), LEGACY["notify_pending"])    # rolled back whole
+        self.notifier.retry_pending(self.at(31))
+        self.assertTrue(self.telegram[0].startswith("[재전송 · 발생 10-15 22:30 KST · 이미 해소됨 10-15 22:40 KST]"))
+        self.assertEqual(sorted(self.journal.meta("notified")), ["hold:reservation#1"])

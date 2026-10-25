@@ -71,6 +71,49 @@ def _incident_key(key, incident):
     return f"{key}#{incident['id']}"
 
 
+MIGRATION_MARK = "notify_incidents_v1"
+
+
+def migrate_legacy(journal):
+    """Move records written before incidents existed - delivery (`notified`),
+    pending retries (`notify_pending`) and resolutions (`resolved_incidents`) -
+    into ONE incident per key (#1), in one transaction with a completion mark,
+    so a crash leaves the old records untouched and a rerun applies it once.
+    A legacy resolution belongs to that incident only if it came after it."""
+    if journal.meta(MIGRATION_MARK):
+        return False
+    with journal.atomic():
+        sent = journal.meta("notified", {}) or {}
+        pending = journal.meta("notify_pending", {}) or {}
+        resolved = journal.meta("resolved_incidents", {}) or {}
+        incidents = journal.meta("incidents", {}) or {}
+        legacy = {k for k in (*sent, *pending, *resolved) if "#" not in k}
+        for key in sorted(legacy):
+            record, entry, done = sent.pop(key, None), pending.pop(key, None), resolved.pop(key, None)
+            started = min(t for t in ((entry or {}).get("occurred") or (entry or {}).get("first"),
+                                      (record or {}).get("at"), done) if t)
+            incident = incidents.get(key) or {"id": 1, "started": started, "resolved": None}
+            incidents.setdefault(key, incident)
+            first = {"id": 1}
+            target = _incident_key(key, first)
+            if record is not None:
+                sent.setdefault(target, record)
+            if entry is not None:
+                pending[target] = dict(entry, base=key, incident=1,
+                                       occurred=entry.get("occurred") or entry["first"])
+            occurred = (entry or {}).get("occurred") or (entry or {}).get("first") or (record or {}).get("at") or started
+            if done and datetime.fromisoformat(done) >= datetime.fromisoformat(occurred):
+                resolved[target] = done
+                if incident["id"] == 1 and not incident.get("resolved"):
+                    incident["resolved"] = done
+        journal.put_meta("notified", sent)
+        journal.put_meta("notify_pending", pending)
+        journal.put_meta("resolved_incidents", resolved)
+        journal.put_meta("incidents", incidents)
+        journal.put_meta(MIGRATION_MARK, True)
+    return True
+
+
 def _open_incident(journal, key, now):
     """The current incident of `key`, registering a new one first when there is
     none or the last one is resolved (before any suppression decision)."""
@@ -80,14 +123,20 @@ def _open_incident(journal, key, now):
         return current
     current = {"id": (current or {}).get("id", 0) + 1, "started": now.isoformat(), "resolved": None}
     incidents[key] = current
-    sent = journal.meta("notified", {}) or {}
-    if current["id"] == 1 and key in sent:
-        # A record written before incidents existed belongs to this incident:
-        # adopted, so an ongoing problem is not announced again after an upgrade.
-        sent[_incident_key(key, current)] = sent.pop(key)
-        journal.put_meta("notified", sent)
     journal.put_meta("incidents", incidents)
     return current
+
+
+def _channel_backoff(journal, name, now, ok):
+    """Per-channel retry time: after a failed retry the channel is not retried
+    again, by any pending entry (old ones included), before it; any success
+    clears it."""
+    backoff = journal.meta("channel_retry_at", {}) or {}
+    if ok:
+        backoff.pop(name, None)
+    else:
+        backoff[name] = (now + RETRY_AFTER_FAILURE).isoformat()
+    journal.put_meta("channel_retry_at", backoff)
 
 
 def current_record(journal, key):
@@ -214,6 +263,7 @@ class Notifier:
         """Per-channel bookkeeping: a channel that delivered is quiet for the
         category window; a channel that failed is retried after 30 minutes, even
         when another channel succeeded."""
+        migrate_legacy(self.j)
         base = f"{category}:{code}"
         incident = _open_incident(self.j, base, now)        # registered before any suppression decision
         key = _incident_key(base, incident)
@@ -249,9 +299,12 @@ class Notifier:
                 channel(text)
                 delivered.append(name)
                 status[name] = {"at": now.isoformat(), "ok": True}
+                _channel_backoff(self.j, name, now, True)
             except Exception as exc:   # delivery problems never touch trading state
                 failed.append({"channel": name, "error_type": type(exc).__name__})
                 status[name] = {"at": now.isoformat(), "ok": False}
+                # A first notice of a new incident is tried once; only retry
+                # failures set the channel's retry time (retry_pending).
         sent[key] = {"at": now.isoformat(), "channels": status}
         self._remember_failures(key, category, text, delivered, failed, now, incident=(base, incident))
         cutoff = now - timedelta(days=8)
@@ -283,6 +336,7 @@ class Notifier:
         """Called at the start of every run. Re-sends stored texts to channels whose
         retry time has passed. Never raises; gives up after RETRY_GIVE_UP."""
         try:
+            migrate_legacy(self.j)
             pending = self.j.meta("notify_pending", {})
             if not pending or not self.enabled:
                 return 0
@@ -302,7 +356,9 @@ class Notifier:
             # A channel tried in this pass (some entry is due on it) is tried for
             # every entry, open incidents first; a channel that fails is not
             # retried again in the same pass.
-            trying = {n for _, e in order if now >= datetime.fromisoformat(e["retry_at"]) for n in e["channels"]}
+            backoff = self.j.meta("channel_retry_at", {}) or {}
+            trying = {n for _, e in order if now >= datetime.fromisoformat(e["retry_at"]) for n in e["channels"]
+                      if n not in backoff or now >= datetime.fromisoformat(backoff[n])}
             broken = set()
             for key, entry in order:
                 if now - datetime.fromisoformat(entry["first"]) >= RETRY_GIVE_UP:
@@ -323,9 +379,11 @@ class Notifier:
                     try:
                         channel(text)
                         delivered.append(name)
+                        _channel_backoff(self.j, name, now, True)
                     except Exception as exc:
                         failed.append({"channel": name, "error_type": type(exc).__name__})
                         broken.add(name)
+                        _channel_backoff(self.j, name, now, False)
                 record = sent.setdefault(key, {"at": now.isoformat(), "channels": {}})
                 record.setdefault("channels", {})
                 for name in delivered:
