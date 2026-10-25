@@ -733,7 +733,7 @@ def demo(args):
 
 
 def local_status(args):
-    _, state, _ = load_config(args.config)
+    cfg, state, _ = load_config(args.config)
     journal = Journal(state / "journal.sqlite")
     output({"health": journal.meta("health"), "signal": journal.meta("signal"),
             "halt": journal.meta("halt"), "lock": journal.meta("lock_info"), "hold": journal.meta("active_hold"),
