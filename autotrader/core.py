@@ -291,6 +291,7 @@ class Journal:
 
     def __init__(self, path):
         self._depth = 0
+        self.db = None
         try:
             self.db = sqlite3.connect(path)
             self.db.row_factory = sqlite3.Row
@@ -316,8 +317,13 @@ class Journal:
                                 "WHERE status IN (?,?,?))", IN_FLIGHT)
             self.db.execute("CREATE UNIQUE INDEX IF NOT EXISTS one_in_flight ON actions(inflight)")
             self.db.commit()
-        except sqlite3.DatabaseError as exc:
-            raise JournalError("State database unreadable: " + type(exc).__name__) from exc
+        except BaseException as exc:
+            # A failed open keeps no handle: the caller never gets this object to close.
+            if self.db is not None:
+                self.db.close()
+            if isinstance(exc, sqlite3.DatabaseError):
+                raise JournalError("State database unreadable: " + type(exc).__name__) from exc
+            raise
 
     @contextmanager
     def atomic(self, immediate=False):

@@ -194,6 +194,7 @@ class DelayAlertTests(Base):
         secret = "s" * 40
         monitor = Monitor(str(Path(self.tmp.name) / "m.sqlite"), {"instances": [message["instance"]]}, secret, [],
                           sleep=lambda s: None)
+        self.addCleanup(monitor.db.close)
         body = json.dumps(message, sort_keys=True, separators=(",", ":")).encode()
         self.assertEqual(monitor.receive(body, heartbeat.sign(body, secret), now)[0], 200)
         self.assertIn("switch_alert_undelivered", [k for _, k in monitor.evaluate(now)])
@@ -350,7 +351,11 @@ class ServiceTests(unittest.TestCase):
             if argv[:2] == ["fdesetup", "status"]:
                 return 0, "FileVault is On.\n"
             return 0, ""
-        report = ops.service_status(ROOT, runner=runner)
+        # The macOS branch on any OS: launchctl and FileVault exist only there
+        # (Windows: WindowsStatusTests in test_windows_tasks). os.getuid is
+        # stubbed because Windows has none; the runner answers every command.
+        with patch.object(ops.os, "getuid", return_value=501, create=True):
+            report = ops.service_status(ROOT, runner=runner, platform="darwin")
         self.assertTrue(report["both_active"])
         self.assertIn("warning", report)
         self.assertEqual(report["filevault"], "FileVault is On.")

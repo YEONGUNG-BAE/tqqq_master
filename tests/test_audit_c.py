@@ -167,7 +167,7 @@ class TaxYearTests(unittest.TestCase):
         self.assertEqual(plan.status(2026, datetime(2028, 1, 20, tzinfo=timezone.utc))["reserve_krw"], 0)
 
     def test_example_config_with_a_null_deadline_means_unset(self):
-        example = json.loads((Path(__file__).resolve().parent.parent / "config.example.json").read_text())
+        example = json.loads((Path(__file__).resolve().parent.parent / "config.example.json").read_text(encoding="utf-8"))
         plan = TaxPlan(self.journal.db, example["tax"], lambda y: {"estimated_tax_krw": D(1), "complete": True},
                        lambda: D(1400))
         self.assertIsNone(plan.deadline_for(2026))

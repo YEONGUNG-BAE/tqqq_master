@@ -132,9 +132,7 @@ class ReservationCoverageGateTests(unittest.TestCase):
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-
-    def tearDown(self):
-        self.temp.cleanup()
+        self.addCleanup(self.temp.cleanup)          # runs after the journals' closes below
 
     def engine(self, mode, complete):
         broker = Paper(usd="1000")

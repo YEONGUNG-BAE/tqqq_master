@@ -6,6 +6,7 @@ that patch sys.platform or oslock.WINDOWS check logic only, not Windows."""
 import io
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -158,6 +159,78 @@ class PathTests(unittest.TestCase):
             self.assertTrue((root / "state 관찰" / "journal.sqlite").exists())
             self.assertFalse((elsewhere / "state 관찰").exists())
             self.assertIn("health", json.loads(out.getvalue()))
+
+
+class ConnectionCloseTests(unittest.TestCase):
+    """Every journal a command opens is closed on success and on an exception
+    (Windows cannot delete or replace an open SQLite file)."""
+
+    def setUp(self):
+        from autotrader import __main__ as cli
+        from autotrader.core import Journal
+        self.cli, self.opened = cli, []
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        (self.root / "config.json").write_text(json.dumps({"state_dir": "state", "notifications": False,
+                                                           "account_lock_dir": str(self.root / "locks")}),
+                                               encoding="utf-8")
+        opened = self.opened
+
+        class Recorded(Journal):
+            def __init__(self, path):
+                super().__init__(path)
+                opened.append(self)
+        patcher = patch.object(cli, "Journal", Recorded)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def assert_all_closed(self):
+        self.assertTrue(self.opened)
+        for journal in self.opened:
+            with self.assertRaises(sqlite3.ProgrammingError):   # closed database
+                journal.db.execute("SELECT 1")
+
+    def status(self):
+        with patch("sys.argv", ["autotrader", "status", "--config", str(self.root / "config.json")]), \
+             redirect_stdout(io.StringIO()):
+            return self.cli.main()
+
+    def test_status_closes_its_journal(self):
+        self.assertEqual(self.status(), 0)
+        self.assert_all_closed()
+
+    def test_status_closes_its_journal_when_a_read_fails(self):
+        with patch.object(self.cli.books, "diagnose", side_effect=RuntimeError("boom")):
+            with self.assertRaises(RuntimeError):
+                self.status()
+        self.assert_all_closed()
+
+    def test_run_closes_its_journal_when_a_step_before_trading_fails(self):
+        from autotrader.core import Settings
+        state = self.root / "state"
+        state.mkdir()
+        with patch.object(self.cli, "remember_alias", side_effect=RuntimeError("boom")):
+            with self.assertRaises(RuntimeError):
+                self.cli.run_locked({"notifications": False}, state, Settings(mode="observe"))
+        self.assert_all_closed()
+
+    def test_a_journal_that_fails_to_open_keeps_no_handle(self):
+        from autotrader.core import Journal, JournalError
+        path = self.root / "journal.sqlite"
+        path.write_bytes(b"not a database" * 100)
+        connections, connect = [], sqlite3.connect
+
+        def recording_connect(*args, **kwargs):
+            connections.append(connect(*args, **kwargs))
+            return connections[-1]
+        with patch("autotrader.core.sqlite3.connect", recording_connect):
+            with self.assertRaises(JournalError):
+                Journal(path)
+        self.assertEqual(len(connections), 1)
+        with self.assertRaises(sqlite3.ProgrammingError):
+            connections[0].execute("SELECT 1")
+        path.unlink()                                  # on Windows this fails while a handle is open
 
 
 def icacls(code=0, sddl=None, raises=None):

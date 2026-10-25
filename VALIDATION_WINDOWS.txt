@@ -1,0 +1,579 @@
+# 검증 출력 — 2026-10-25 KST, Windows 11 Pro 10.0.26300 네이티브(WSL 아님)
+# Python 3.14.5 64bit | exchange-calendars 4.12 | pandas 2.3.3 | NumPy 2.5.4 | tzdata 2026.5
+# 기본 인코딩 CP949(locale cp949, utf8_mode 0, PYTHONUTF8 미설정). 원본 로그는 CP949이며 여기서는 UTF-8로 옮김
+# 명령: .venv\Scripts\python.exe -m unittest discover -s tests -v
+# 공식 포털 명세(vendor/meritz-portal-20261015.json)가 없는 상태의 결과: 명세 대조 3개가 건너뜀
+# 이 실행 직전의 같은 코드 실행 1회는 부하 중 잠금 해제 타이밍 1건 오류(WORK_STATUS 참고)
+# 원 로그 머리: HEAD 88a9525 + uncommitted fixes (final code); 2026-10-25T20:20:52+09:00
+# 원 로그 머리: python 3.14.5 locale cp949 fs utf-8 stdout cp949 utf8_mode 0
+# 원 로그 머리: PYTHONUTF8 unset; .venv\Scripts\python.exe -m unittest discover -s tests -v
+
+test_account_show_reports_scope_without_secrets (test_accounts.AliasTests.test_account_show_reports_scope_without_secrets) ... ok
+test_aliases_are_names_never_numbers (test_accounts.AliasTests.test_aliases_are_names_never_numbers) ... ok
+test_notifications_and_status_name_the_installation (test_accounts.AliasTests.test_notifications_and_status_name_the_installation) ... <project>\.venv\Lib\site-packages\exchange_calendars\exchange_calendar.py:65: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  ONE_HOUR = pd.Timedelta("1h")
+<project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+ok
+test_a_config_for_another_account_is_refused_before_any_request (test_accounts.BindingTests.test_a_config_for_another_account_is_refused_before_any_request) ... ok
+test_a_journal_from_before_bindings_keeps_working (test_accounts.BindingTests.test_a_journal_from_before_bindings_keeps_working) ... ok
+test_a_journal_of_another_key_is_refused (test_accounts.BindingTests.test_a_journal_of_another_key_is_refused) ... ok
+test_a_new_journal_binds_and_the_matching_config_passes (test_accounts.BindingTests.test_a_new_journal_binds_and_the_matching_config_passes) ... ok
+test_records_without_a_binding_are_never_adopted_silently (test_accounts.BindingTests.test_records_without_a_binding_are_never_adopted_silently) ... ok
+test_relink_is_a_user_statement_audited_and_refused_while_a_request_is_open (test_accounts.BindingTests.test_relink_is_a_user_statement_audited_and_refused_while_a_request_is_open) ... ok
+test_concurrent_token_issue_in_two_processes_issues_once (test_accounts.ProcessTests.test_concurrent_token_issue_in_two_processes_issues_once) ... ok
+test_two_installations_with_different_keys_never_lock_each_other (test_accounts.ProcessTests.test_two_installations_with_different_keys_never_lock_each_other) ... ok
+test_a_payment_from_secured_external_money_consumes_it (test_audit_b.ExternalFundsTests.test_a_payment_from_secured_external_money_consumes_it) ... ok
+test_b_deposit_before_the_planned_date_is_counted_once (test_audit_b.ExternalFundsTests.test_b_deposit_before_the_planned_date_is_counted_once) ... ok
+test_deposit_matched_twice_or_redelivered_moves_once (test_audit_b.ExternalFundsTests.test_deposit_matched_twice_or_redelivered_moves_once) ... ok
+test_payment_source_must_be_named_when_ambiguous_and_never_goes_negative (test_audit_b.ExternalFundsTests.test_payment_source_must_be_named_when_ambiguous_and_never_goes_negative) ... ok
+test_smaller_bonus_is_reflected_in_remaining_installments_without_resecuring (test_audit_b.ExternalFundsTests.test_smaller_bonus_is_reflected_in_remaining_installments_without_resecuring) ... ok
+test_unconfirmed_deposit_is_held_back_but_not_krw_ready (test_audit_b.ExternalFundsTests.test_unconfirmed_deposit_is_held_back_but_not_krw_ready) ... ok
+test_concurrent_threads_apply_each_message_once_and_offset_never_moves_back (test_audit_b.TelegramConcurrencyTests.test_concurrent_threads_apply_each_message_once_and_offset_never_moves_back) ... ok
+test_lost_reply_does_not_reapply_the_change (test_audit_b.TelegramConcurrencyTests.test_lost_reply_does_not_reapply_the_change) ... ok
+test_two_receivers_that_read_the_same_offset_apply_once (test_audit_b.TelegramConcurrencyTests.test_two_receivers_that_read_the_same_offset_apply_once) ... ok
+test_failed_or_stale_sync_keeps_tax_sells_on_hold_until_fixed (test_audit_c.LedgerCompletenessTests.test_failed_or_stale_sync_keeps_tax_sells_on_hold_until_fixed) ... ok
+test_holdings_not_checked_is_not_complete (test_audit_c.LedgerCompletenessTests.test_holdings_not_checked_is_not_complete) ... ok
+test_strategy_switch_still_runs_while_tax_data_is_incomplete (test_audit_c.LedgerCompletenessTests.test_strategy_switch_still_runs_while_tax_data_is_incomplete) ... ok
+test_symbol_only_in_the_account_and_a_normal_empty_account (test_audit_c.LedgerCompletenessTests.test_symbol_only_in_the_account_and_a_normal_empty_account) ... ok
+test_symbol_only_in_the_ledger_is_compared_as_zero_held (test_audit_c.LedgerCompletenessTests.test_symbol_only_in_the_ledger_is_compared_as_zero_held) ... ok
+test_tax_reply_uses_the_engine_holdings_and_completeness (test_audit_c.LedgerCompletenessTests.test_tax_reply_uses_the_engine_holdings_and_completeness) ... ok
+test_settlement_cycle_follows_the_era_around_the_t1_switch (test_audit_c.SettlementTests.test_settlement_cycle_follows_the_era_around_the_t1_switch) ... <project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+ok
+test_trade_before_the_calendar_gets_no_made_up_settlement_date (test_audit_c.SettlementTests.test_trade_before_the_calendar_gets_no_made_up_settlement_date) ... <project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+ok
+test_wrong_stored_settlement_dates_are_repaired_once_with_an_audit (test_audit_c.SettlementTests.test_wrong_stored_settlement_dates_are_repaired_once_with_an_audit) ... <project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+ok
+test_ambiguous_year_is_refused_and_explicit_year_is_applied (test_audit_c.TaxYearCommandTests.test_ambiguous_year_is_refused_and_explicit_year_is_applied) ... ok
+test_money_command_with_no_open_year_asks_for_the_year (test_audit_c.TaxYearCommandTests.test_money_command_with_no_open_year_asks_for_the_year) ... ok
+test_engine_works_on_the_oldest_year_that_still_needs_money (test_audit_c.TaxYearTests.test_engine_works_on_the_oldest_year_that_still_needs_money) ... ok
+test_example_config_with_a_null_deadline_means_unset (test_audit_c.TaxYearTests.test_example_config_with_a_null_deadline_means_unset) ... ok
+test_june_deadline_keeps_the_previous_year_due (test_audit_c.TaxYearTests.test_june_deadline_keeps_the_previous_year_due) ... ok
+test_next_year_schedule_never_reuses_another_years_deadline (test_audit_c.TaxYearTests.test_next_year_schedule_never_reuses_another_years_deadline) ... ok
+test_notices_cover_every_open_year (test_audit_c.TaxYearTests.test_notices_cover_every_open_year) ... ok
+test_per_year_deadlines_and_separate_reserves (test_audit_c.TaxYearTests.test_per_year_deadlines_and_separate_reserves) ... ok
+test_settlement_buffer_counts_calendar_days (test_audit_c.TaxYearTests.test_settlement_buffer_counts_calendar_days) ... ok
+test_two_unpaid_years_require_an_explicit_year (test_audit_c.TaxYearTests.test_two_unpaid_years_require_an_explicit_year) ... ok
+test_unpaid_previous_year_stays_due_after_may_and_late_payment_lands_there (test_audit_c.TaxYearTests.test_unpaid_previous_year_stays_due_after_may_and_late_payment_lands_there) ... ok
+test_done_reverse_fx_without_its_tax_booking (test_audit_d.ExistingDbTests.test_done_reverse_fx_without_its_tax_booking) ... ok
+test_done_switch_order_without_its_switch_booking (test_audit_d.ExistingDbTests.test_done_switch_order_without_its_switch_booking) ... ok
+test_fresh_db_is_clean_and_repairs_record_nothing (test_audit_d.ExistingDbTests.test_fresh_db_is_clean_and_repairs_record_nothing) ... ok
+test_orphan_reservations_of_unsent_or_missing_requests (test_audit_d.ExistingDbTests.test_orphan_reservations_of_unsent_or_missing_requests) ... ok
+test_unresolved_request_is_reported_and_never_settled_automatically (test_audit_d.ExistingDbTests.test_unresolved_request_is_reported_and_never_settled_automatically) ... ok
+test_old_external_funds_table_is_migrated_once_with_an_audit (test_audit_d.ExistingTaxTablesTests.test_old_external_funds_table_is_migrated_once_with_an_audit) ... ok
+test_wrong_settlement_dates_are_found_then_repaired_once (test_audit_d.ExistingTaxTablesTests.test_wrong_settlement_dates_are_found_then_repaired_once) ... <project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+ok
+test_active_reservation_blocks_reverse_fx (test_audit_d.ReverseFxReservationTests.test_active_reservation_blocks_reverse_fx) ... ok
+test_clean_complete_lookup_lets_reverse_fx_proceed (test_audit_d.ReverseFxReservationTests.test_clean_complete_lookup_lets_reverse_fx_proceed) ... ok
+test_failed_lookup_blocks_reverse_fx (test_audit_d.ReverseFxReservationTests.test_failed_lookup_blocks_reverse_fx) ... ok
+test_incomplete_lookup_blocks_reverse_fx_in_live (test_audit_d.ReverseFxReservationTests.test_incomplete_lookup_blocks_reverse_fx_in_live) ... ok
+test_lost_reply_is_settled_even_after_a_reservation_appears_and_never_resent (test_audit_d.ReverseFxReservationTests.test_lost_reply_is_settled_even_after_a_reservation_appears_and_never_resent) ... ok
+test_half_applied_database_from_the_previous_version_is_completed (test_audit_e.MigrationCrashTests.test_half_applied_database_from_the_previous_version_is_completed) ... ok
+test_kill_at_every_migration_step_recovers_on_restart (test_audit_e.MigrationCrashTests.test_kill_at_every_migration_step_recovers_on_restart) ... ok
+test_a_correction_that_may_still_hold_unknown_money_does_not_lift_it (test_audit_e.PaymentSourceIssueTests.test_a_correction_that_may_still_hold_unknown_money_does_not_lift_it) ... ok
+test_detect_then_correct_then_the_hold_is_lifted_with_an_audit (test_audit_e.PaymentSourceIssueTests.test_detect_then_correct_then_the_hold_is_lifted_with_an_audit) ... ok
+test_new_other_money_payments_are_never_flagged_as_unknown (test_audit_e.PaymentSourceIssueTests.test_new_other_money_payments_are_never_flagged_as_unknown) ... ok
+test_bank_holidays_with_the_market_open_are_not_settlement_days (test_audit_e.SettlementCalendarTests.test_bank_holidays_with_the_market_open_are_not_settlement_days) ... <project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+ok
+test_confirmed_dates_are_kept_and_only_computed_values_are_corrected (test_audit_e.SettlementCalendarTests.test_confirmed_dates_are_kept_and_only_computed_values_are_corrected) ... <project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+ok
+test_unscheduled_closure_inside_the_window_is_not_guessed (test_audit_e.SettlementCalendarTests.test_unscheduled_closure_inside_the_window_is_not_guessed) ... <project>\.venv\Lib\site-packages\pandas\core\arrays\datetimes.py:668: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x000002935AC66890>
+  converted = ints_to_pydatetime(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+ok
+test_healthy_plan_baseline (test_audit_f.CliTests.test_healthy_plan_baseline) ... <project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+ok
+test_tax_plan_failure_still_runs_the_engine_and_ends_as_a_hold (test_audit_f.CliTests.test_tax_plan_failure_still_runs_the_engine_and_ends_as_a_hold) ... ok
+test_tax_plan_failure_under_a_lock_stays_a_lock (test_audit_f.CliTests.test_tax_plan_failure_under_a_lock_stays_a_lock) ... ok
+test_confirmed_tqqq_exit_sell_goes_out_and_the_buy_is_held (test_audit_f.EngineTests.test_confirmed_tqqq_exit_sell_goes_out_and_the_buy_is_held) ... ok
+test_intraday_recovery_sells_the_risk_symbol_but_holds_the_buy (test_audit_f.EngineTests.test_intraday_recovery_sells_the_risk_symbol_but_holds_the_buy) ... ok
+test_locks_still_stop_everything (test_audit_f.EngineTests.test_locks_still_stop_everything) ... ok
+test_order_sent_before_the_outage_is_still_settled (test_audit_f.EngineTests.test_order_sent_before_the_outage_is_still_settled) ... ok
+test_return_switch_sell_and_new_deposit_fx_are_held (test_audit_f.EngineTests.test_return_switch_sell_and_new_deposit_fx_are_held) ... ok
+test_failure_between_reserve_move_and_switch_books_rolls_both_back (test_audit_f.ReserveFromProceedsAfterOutageTests.test_failure_between_reserve_move_and_switch_books_rolls_both_back) ... ok
+test_reserve_taken_from_switch_proceeds_comes_out_of_the_switch_budget_once (test_audit_f.ReserveFromProceedsAfterOutageTests.test_reserve_taken_from_switch_proceeds_comes_out_of_the_switch_budget_once) ... ok
+test_tax_sell_in_flight_is_settled_and_booked_once_the_plan_returns (test_audit_f.TaxOrderDuringOutageTests.test_tax_sell_in_flight_is_settled_and_booked_once_the_plan_returns) ... ok
+test_cancel_confirmed_vs_cancel_requested (test_automation.AdapterTests.test_cancel_confirmed_vs_cancel_requested) ... ok
+test_no_automatic_warning_ack (test_automation.AdapterTests.test_no_automatic_warning_ack) ... ok
+test_observe_transport_blocks_post_before_network (test_automation.AdapterTests.test_observe_transport_blocks_post_before_network) ... ok
+test_partial_cancel_does_not_finish_original_order (test_automation.AdapterTests.test_partial_cancel_does_not_finish_original_order) ... ok
+test_successful_post_is_not_retried_on_expired_token (test_automation.AdapterTests.test_successful_post_is_not_retried_on_expired_token) ... ok
+test_completed_close_not_current_intraday (test_automation.CalendarHistoryTests.test_completed_close_not_current_intraday) ... ok
+test_dividend_adjustment_mismatch_stops (test_automation.CalendarHistoryTests.test_dividend_adjustment_mismatch_stops) ... ok
+test_dst_and_early_close (test_automation.CalendarHistoryTests.test_dst_and_early_close) ... ok
+test_execution_window (test_automation.CalendarHistoryTests.test_execution_window) ... ok
+test_nonuniform_split_does_not_rebase (test_automation.CalendarHistoryTests.test_nonuniform_split_does_not_rebase) ... ok
+test_price_overlap_rounding_and_missing_session (test_automation.CalendarHistoryTests.test_price_overlap_rounding_and_missing_session) ... ok
+test_refresh_checks_each_chunk_and_excludes_future_seed (test_automation.CalendarHistoryTests.test_refresh_checks_each_chunk_and_excludes_future_seed) ... ok
+test_rule_hysteresis_and_expiry_diagnostic (test_automation.CalendarHistoryTests.test_rule_hysteresis_and_expiry_diagnostic) ... ok
+test_uniform_split_rebases_all_older_history (test_automation.CalendarHistoryTests.test_uniform_split_rebases_all_older_history) ... ok
+test_cannot_reuse_paper_state_for_live (test_automation.ExecutionTests.test_cannot_reuse_paper_state_for_live) ... ok
+test_crash_before_receipt_checkpoint_prevents_resubmit (test_automation.ExecutionTests.test_crash_before_receipt_checkpoint_prevents_resubmit) ... ok
+test_external_untracked_order_stops (test_automation.ExecutionTests.test_external_untracked_order_stops) ... ok
+test_full_sale_confirms_before_buy (test_automation.ExecutionTests.test_full_sale_confirms_before_buy) ... ok
+test_fx_checkpoint_and_restart_no_duplicate (test_automation.ExecutionTests.test_fx_checkpoint_and_restart_no_duplicate) ... ok
+test_fx_daily_cap_and_later_deposit (test_automation.ExecutionTests.test_fx_daily_cap_and_later_deposit) ... ok
+test_fx_discount_regression_stops (test_automation.ExecutionTests.test_fx_discount_regression_stops) ... ok
+test_fx_timeout_may_succeed_and_never_repeats (test_automation.ExecutionTests.test_fx_timeout_may_succeed_and_never_repeats) ... ok
+test_holdings_lag_does_not_duplicate (test_automation.ExecutionTests.test_holdings_lag_does_not_duplicate) ... ok
+test_krw_reserve_remains (test_automation.ExecutionTests.test_krw_reserve_remains) ... ok
+test_migration_requires_allowlist (test_automation.ExecutionTests.test_migration_requires_allowlist) ... ok
+test_new_money_buys_qqq_in_defensive_state (test_automation.ExecutionTests.test_new_money_buys_qqq_in_defensive_state) ... ok
+test_observe_never_calls_mutations (test_automation.ExecutionTests.test_observe_never_calls_mutations) ... ok
+test_order_timeout_may_succeed_and_never_repeats (test_automation.ExecutionTests.test_order_timeout_may_succeed_and_never_repeats) ... ok
+test_partial_sale_waits_then_cancel_and_sells_remainder (test_automation.ExecutionTests.test_partial_sale_waits_then_cancel_and_sells_remainder) ... ok
+test_pending_buy_not_duplicated_after_restart (test_automation.ExecutionTests.test_pending_buy_not_duplicated_after_restart) ... ok
+test_real_buying_power_caps_quantity (test_automation.ExecutionTests.test_real_buying_power_caps_quantity) ... ok
+test_stale_fx_no_actions (test_automation.ExecutionTests.test_stale_fx_no_actions) ... ok
+test_stale_or_crossed_quote_stops (test_automation.ExecutionTests.test_stale_or_crossed_quote_stops) ... ok
+test_stale_signal_no_actions (test_automation.ExecutionTests.test_stale_signal_no_actions) ... ok
+test_unknown_positions_untouched (test_automation.ExecutionTests.test_unknown_positions_untouched) ... ok
+test_warning_not_automatically_accepted (test_automation.ExecutionTests.test_warning_not_automatically_accepted) ... ok
+test_no_done_order_without_its_switch_entry_on_disk (test_crash_recovery.AtomicityTests.test_no_done_order_without_its_switch_entry_on_disk) ... ok
+test_done_tax_sell_with_open_reservation_is_finished_once (test_crash_recovery.LegacyDatabaseTests.test_done_tax_sell_with_open_reservation_is_finished_once) ... ok
+test_falsely_completed_intent_is_reopened_and_finished_once (test_crash_recovery.LegacyDatabaseTests.test_falsely_completed_intent_is_reopened_and_finished_once) ... ok
+test_kill_after_fx_out_done_moves_the_reserve_once (test_crash_recovery.ReverseFxCrashTests.test_kill_after_fx_out_done_moves_the_reserve_once) ... ok
+test_kill_after_buy_done_commit_counts_the_spend_once (test_crash_recovery.SwitchCrashTests.test_kill_after_buy_done_commit_counts_the_spend_once) ... ok
+test_kill_after_sell_done_commit_still_buys_the_target (test_crash_recovery.SwitchCrashTests.test_kill_after_sell_done_commit_still_buys_the_target) ... ok
+test_kill_after_reservation_before_send_releases_it (test_crash_recovery.TaxCrashTests.test_kill_after_reservation_before_send_releases_it) ... ok
+test_kill_after_tax_sell_done_moves_proceeds_exactly_once (test_crash_recovery.TaxCrashTests.test_kill_after_tax_sell_done_moves_proceeds_exactly_once) ... ok
+test_kill_between_intent_and_reservation_leaves_nothing_counted (test_crash_recovery.TaxCrashTests.test_kill_between_intent_and_reservation_leaves_nothing_counted) ... ok
+test_orphan_reservation_on_a_terminal_request_is_released (test_crash_recovery.TaxCrashTests.test_orphan_reservation_on_a_terminal_request_is_released) ... ok
+test_unknown_request_keeps_its_reservation_and_is_not_resent (test_crash_recovery.TaxCrashTests.test_unknown_request_keeps_its_reservation_and_is_not_resent) ... ok
+test_cli_doctor_with_live_config_is_read_only_and_redacted (test_doctor.DoctorTests.test_cli_doctor_with_live_config_is_read_only_and_redacted) ... ok
+test_credit_debt_is_listed_and_blocks (test_doctor.DoctorTests.test_credit_debt_is_listed_and_blocks) ... ok
+test_dividend_adjusted_closes_block_signal_but_keep_fx_plan (test_doctor.DoctorTests.test_dividend_adjusted_closes_block_signal_but_keep_fx_plan) ... ok
+test_existing_non_strategy_holdings_are_shown_and_never_sold (test_doctor.DoctorTests.test_existing_non_strategy_holdings_are_shown_and_never_sold) ... ok
+test_fees_are_not_verified_and_wide_fx_spread_is_a_blocker (test_doctor.DoctorTests.test_fees_are_not_verified_and_wide_fx_spread_is_a_blocker) ... ok
+test_fractional_holding_does_not_hide_the_report (test_doctor.DoctorTests.test_fractional_holding_does_not_hide_the_report) ... ok
+test_fresh_quote_during_window_is_order_grade (test_doctor.DoctorTests.test_fresh_quote_during_window_is_order_grade) ... ok
+test_full_diagnosis_sends_only_reads_and_token (test_doctor.DoctorTests.test_full_diagnosis_sends_only_reads_and_token) ... ok
+test_missing_krw_field_is_listed (test_doctor.DoctorTests.test_missing_krw_field_is_listed) ... ok
+test_missing_usd_balance_row_marks_plan_not_computable (test_doctor.DoctorTests.test_missing_usd_balance_row_marks_plan_not_computable) ... ok
+test_mutation_capable_client_is_refused (test_doctor.DoctorTests.test_mutation_capable_client_is_refused) ... ok
+test_untracked_open_order_and_reservation_are_reported (test_doctor.DoctorTests.test_untracked_open_order_and_reservation_are_reported) ... ok
+test_without_credentials_no_request_and_local_signal_unverified (test_doctor.DoctorTests.test_without_credentials_no_request_and_local_signal_unverified) ... ok
+test_buy_quantity_and_price_match (test_doctor.PlanMatchesEngineTests.test_buy_quantity_and_price_match) ... ok
+test_fx_amount_matches (test_doctor.PlanMatchesEngineTests.test_fx_amount_matches) ... ok
+test_usd_reserve_and_fee_buffer_are_shared (test_doctor.PlanMatchesEngineTests.test_usd_reserve_and_fee_buffer_are_shared) ... ok
+test_korean_daytime_plans_fx_only (test_doctor.RunObserveTests.test_korean_daytime_plans_fx_only) ... ok
+test_non_strategy_holdings_stop_before_any_plan (test_doctor.RunObserveTests.test_non_strategy_holdings_stop_before_any_plan) ... ok
+test_us_open_plans_order_from_current_usd_only (test_doctor.RunObserveTests.test_us_open_plans_order_from_current_usd_only) ... ok
+test_drops_credential_keys_and_masks_values (test_doctor.SanitizeTests.test_drops_credential_keys_and_masks_values) ... ok
+test_candidates_need_matching_fields_time_and_no_prior_attribution (test_fault_injection.AdapterCandidateTests.test_candidates_need_matching_fields_time_and_no_prior_attribution) ... ok
+test_fx_candidates_only_open_api_buys_of_compatible_amount (test_fault_injection.AdapterCandidateTests.test_fx_candidates_only_open_api_buys_of_compatible_amount) ... ok
+test_page_gap_is_a_failed_lookup_not_an_empty_one (test_fault_injection.AdapterCandidateTests.test_page_gap_is_a_failed_lookup_not_an_empty_one) ... ok
+test_lost_order_reply_then_token_expiry_recovers_without_resend (test_fault_injection.AuthAndTokenTests.test_lost_order_reply_then_token_expiry_recovers_without_resend) ... ok
+test_token_refusal_is_explicit_and_post_token_error_is_not_resent (test_fault_injection.AuthAndTokenTests.test_token_refusal_is_explicit_and_post_token_error_is_not_resent) ... ok
+test_repeated_token_refusal_locks_and_unlock_resumes (test_fault_injection.CliAuthLockTests.test_repeated_token_refusal_locks_and_unlock_resumes) ... ok
+test_overlapping_scheduler_or_second_state_folder_does_nothing (test_fault_injection.CliConcurrencyTests.test_overlapping_scheduler_or_second_state_folder_does_nothing) ... ok
+test_corrupt_state_database_blocks_every_request (test_fault_injection.CliStateAndNotificationTests.test_corrupt_state_database_blocks_every_request) ... ok
+test_daily_close_outage_still_reaches_the_engine (test_fault_injection.CliStateAndNotificationTests.test_daily_close_outage_still_reaches_the_engine) ... ok
+test_failed_heartbeat_reaches_telegram_on_the_next_run (test_fault_injection.CliStateAndNotificationTests.test_failed_heartbeat_reaches_telegram_on_the_next_run) ... ok
+test_hold_then_automatic_recovery_is_notified_once_each (test_fault_injection.CliStateAndNotificationTests.test_hold_then_automatic_recovery_is_notified_once_each) ... ok
+test_notification_failure_changes_nothing (test_fault_injection.CliStateAndNotificationTests.test_notification_failure_changes_nothing) ... ok
+test_unlock_refuses_while_a_request_is_unresolved (test_fault_injection.CliStateAndNotificationTests.test_unlock_refuses_while_a_request_is_unresolved) ... ok
+test_database_admits_one_request_in_flight (test_fault_injection.ConcurrencyTests.test_database_admits_one_request_in_flight) ... ok
+test_deposit_during_switch_never_double_spends (test_fault_injection.ConcurrencyTests.test_deposit_during_switch_never_double_spends) ... ok
+test_send_start_refuses_an_intent_changed_by_another_writer (test_fault_injection.ConcurrencyTests.test_send_start_refuses_an_intent_changed_by_another_writer) ... ok
+test_accepted_but_response_lost_is_recovered_once (test_fault_injection.CrashPointTests.test_accepted_but_response_lost_is_recovered_once) ... ok
+test_crash_after_acceptance_before_receipt_saved_is_recovered (test_fault_injection.CrashPointTests.test_crash_after_acceptance_before_receipt_saved_is_recovered) ... ok
+test_crash_before_intent_saved_sends_nothing (test_fault_injection.CrashPointTests.test_crash_before_intent_saved_sends_nothing) ... ok
+test_intent_saved_but_send_never_started_is_abandoned_then_redone_once (test_fault_injection.CrashPointTests.test_intent_saved_but_send_never_started_is_abandoned_then_redone_once) ... ok
+test_send_started_without_broker_record_is_never_resent (test_fault_injection.CrashPointTests.test_send_started_without_broker_record_is_never_resent) ... ok
+test_duplicate_and_out_of_order_reports_never_double_count (test_fault_injection.FillReportOrderingTests.test_duplicate_and_out_of_order_reports_never_double_count) ... ok
+test_documented_not_processed_fx_code_is_retried_after_backoff (test_fault_injection.FxRecoveryTests.test_documented_not_processed_fx_code_is_retried_after_backoff) ... ok
+test_lost_fx_response_with_reflection_lag_never_exchanges_twice (test_fault_injection.FxRecoveryTests.test_lost_fx_response_with_reflection_lag_never_exchanges_twice) ... ok
+test_undocumented_fx_error_with_lagging_history_never_exchanges_twice (test_fault_injection.FxRecoveryTests.test_undocumented_fx_error_with_lagging_history_never_exchanges_twice) ... ok
+test_undocumented_fx_error_without_any_record_locks_instead_of_retrying (test_fault_injection.FxRecoveryTests.test_undocumented_fx_error_without_any_record_locks_instead_of_retrying) ... ok
+test_lock_prevents_own_order_cancel (test_fault_injection.GateOrderingTests.test_lock_prevents_own_order_cancel) ... ok
+test_lock_still_reconciles_own_order_but_sends_nothing (test_fault_injection.GateOrderingTests.test_lock_still_reconciles_own_order_but_sends_nothing) ... ok
+test_untracked_order_blocks_new_requests_but_not_own_status_checks (test_fault_injection.GateOrderingTests.test_untracked_order_blocks_new_requests_but_not_own_status_checks) ... ok
+test_lost_order_reply_then_token_expiry_recovers_without_resend (test_fault_injection.LastMomentSendCheckTests.test_lost_order_reply_then_token_expiry_recovers_without_resend) ... ok
+test_pacing_wait_past_the_window_sends_no_order (test_fault_injection.LastMomentSendCheckTests.test_pacing_wait_past_the_window_sends_no_order) ... ok
+test_quote_that_goes_stale_during_the_wait_sends_no_order (test_fault_injection.LastMomentSendCheckTests.test_quote_that_goes_stale_during_the_wait_sends_no_order) ... ok
+test_short_delay_inside_the_window_still_sends_once (test_fault_injection.LastMomentSendCheckTests.test_short_delay_inside_the_window_still_sends_once) ... ok
+test_token_issue_delay_past_the_window_sends_no_order (test_fault_injection.LastMomentSendCheckTests.test_token_issue_delay_past_the_window_sends_no_order) ... ok
+test_token_refusal_is_explicit_and_post_token_error_is_not_resent (test_fault_injection.LastMomentSendCheckTests.test_token_refusal_is_explicit_and_post_token_error_is_not_resent) ... ok
+test_empty_then_failed_lookup_hold_then_recover (test_fault_injection.LedgerLookupTests.test_empty_then_failed_lookup_hold_then_recover) ... ok
+test_several_candidates_lock_and_attribute_none (test_fault_injection.LedgerLookupTests.test_several_candidates_lock_and_attribute_none) ... ok
+test_failed_channel_is_retried_even_when_another_channel_succeeded (test_fault_injection.NotifierTests.test_failed_channel_is_retried_even_when_another_channel_succeeded) ... ok
+test_failed_delivery_is_recorded_and_retried_later_not_immediately (test_fault_injection.NotifierTests.test_failed_delivery_is_recorded_and_retried_later_not_immediately) ... ok
+test_failed_message_retries_stop_after_a_day (test_fault_injection.NotifierTests.test_failed_message_retries_stop_after_a_day) ... ok
+test_failed_one_time_message_is_resent_without_the_event_repeating (test_fault_injection.NotifierTests.test_failed_one_time_message_is_resent_without_the_event_repeating) ... ok
+test_repeat_suppression_survives_restart (test_fault_injection.NotifierTests.test_repeat_suppression_survives_restart) ... ok
+test_telegram_puts_token_only_in_the_request_url (test_fault_injection.NotifierTests.test_telegram_puts_token_only_in_the_request_url) ... ok
+test_text_never_carries_secrets_numbers_or_amounts (test_fault_injection.NotifierTests.test_text_never_carries_secrets_numbers_or_amounts) ... ok
+test_fill_just_before_cancel_confirmation_counts_only_final_fills (test_fault_injection.PartialFillCancelTests.test_fill_just_before_cancel_confirmation_counts_only_final_fills) ... ok
+test_open_bot_order_for_old_target_is_cancelled_before_timeout (test_fault_injection.ProceedsAndCarryoverTests.test_open_bot_order_for_old_target_is_cancelled_before_timeout) ... ok
+test_proceeds_lag_carries_over_then_next_window_buys_once (test_fault_injection.ProceedsAndCarryoverTests.test_proceeds_lag_carries_over_then_next_window_buys_once) ... ok
+test_target_change_during_carryover_avoids_round_trip (test_fault_injection.ProceedsAndCarryoverTests.test_target_change_during_carryover_avoids_round_trip) ... ok
+test_acceptance_resets_the_failure_count (test_fault_injection.RetryAndLockTests.test_acceptance_resets_the_failure_count) ... ok
+test_refusals_back_off_then_lock_and_survive_restart (test_fault_injection.RetryAndLockTests.test_refusals_back_off_then_lock_and_survive_restart) ... ok
+test_temporary_hold_clears_by_itself (test_fault_injection.RetryAndLockTests.test_temporary_hold_clears_by_itself) ... ok
+test_refresh_error_still_cancels_own_timed_out_order (test_fault_injection.SignalOutageTests.test_refresh_error_still_cancels_own_timed_out_order) ... ok
+test_stale_signal_still_settles_own_order_but_sends_nothing_new (test_fault_injection.SignalOutageTests.test_stale_signal_still_settles_own_order_but_sends_nothing_new) ... ok
+test_clock_behind_the_tick_start_cannot_reopen_a_window (test_fault_injection.SlowRunClockTests.test_clock_behind_the_tick_start_cannot_reopen_a_window) ... ok
+test_fx_window_that_closed_during_the_run_sends_nothing (test_fault_injection.SlowRunClockTests.test_fx_window_that_closed_during_the_run_sends_nothing) ... ok
+test_quote_received_after_slow_reads_is_not_rejected_as_future (test_fault_injection.SlowRunClockTests.test_quote_received_after_slow_reads_is_not_rejected_as_future) ... ok
+test_window_that_closed_during_the_run_sends_nothing (test_fault_injection.SlowRunClockTests.test_window_that_closed_during_the_run_sends_nothing) ... ok
+test_send_start_write_failure_sends_nothing (test_fault_injection.StateFailureTests.test_send_start_write_failure_sends_nothing) ... ok
+test_stale_quote_and_unconfirmed_market_send_nothing (test_fault_injection.StateFailureTests.test_stale_quote_and_unconfirmed_market_send_nothing) ... ok
+test_target_reached_then_reruns_and_restarts_send_nothing (test_fault_injection.SteadyStateTests.test_target_reached_then_reruns_and_restarts_send_nothing) ... ok
+test_missing_code_on_order_becomes_unknown_in_the_engine_and_is_not_resent (test_fault_injection.TransportClassificationTests.test_missing_code_on_order_becomes_unknown_in_the_engine_and_is_not_resent) ... ok
+test_mutations_are_never_retried_and_are_classified (test_fault_injection.TransportClassificationTests.test_mutations_are_never_retried_and_are_classified) ... ok
+test_only_documented_fx_codes_count_as_not_processed (test_fault_injection.TransportClassificationTests.test_only_documented_fx_codes_count_as_not_processed) ... ok
+test_only_refused_connections_count_as_not_sent (test_fault_injection.TransportClassificationTests.test_only_refused_connections_count_as_not_sent) ... ok
+test_reads_retry_with_growing_jittered_backoff (test_fault_injection.TransportClassificationTests.test_reads_retry_with_growing_jittered_backoff) ... ok
+test_reply_without_response_code_is_unknown_not_refused (test_fault_injection.TransportClassificationTests.test_reply_without_response_code_is_unknown_not_refused) ... ok
+test_send_start_hook_runs_after_token_and_before_transport (test_fault_injection.TransportClassificationTests.test_send_start_hook_runs_after_token_and_before_transport) ... ok
+test_a_continuing_incident_never_bypasses_the_channel_retry_time (test_incidents.ConcurrentIncidentsAcrossRestartsTests.test_a_continuing_incident_never_bypasses_the_channel_retry_time) ... ok
+test_a_continuing_incident_never_bypasses_the_channel_retry_time (test_incidents.ConcurrentIncidentsTests.test_a_continuing_incident_never_bypasses_the_channel_retry_time) ... ok
+test_delivery_pending_and_resolution_move_into_one_incident (test_incidents.LegacyMigrationTests.test_delivery_pending_and_resolution_move_into_one_incident) ... ok
+test_kill_in_the_middle_of_the_migration_leaves_the_old_records_and_reruns_once (test_incidents.LegacyMigrationTests.test_kill_in_the_middle_of_the_migration_leaves_the_old_records_and_reruns_once) ... ok
+test_migration_applies_once_even_when_run_again (test_incidents.LegacyMigrationTests.test_migration_applies_once_even_when_run_again) ... ok
+test_a_record_from_before_incidents_is_adopted_not_resent (test_incidents.LegacyStateTests.test_a_record_from_before_incidents_is_adopted_not_resent) ... ok
+test_a_third_occurrence_after_a_second_resolution_is_its_own_incident (test_incidents.RecurrenceAcrossRestartsTests.test_a_third_occurrence_after_a_second_resolution_is_its_own_incident) ... ok
+test_an_older_incident_delivered_late_never_silences_the_current_one (test_incidents.RecurrenceAcrossRestartsTests.test_an_older_incident_delivered_late_never_silences_the_current_one) ... ok
+test_each_late_copy_carries_its_own_incident_resolution (test_incidents.RecurrenceAcrossRestartsTests.test_each_late_copy_carries_its_own_incident_resolution) ... ok
+test_registration_happens_before_suppression (test_incidents.RecurrenceAcrossRestartsTests.test_registration_happens_before_suppression) ... ok
+test_resolution_then_recurrence_is_a_new_incident_delivered_accurately (test_incidents.RecurrenceAcrossRestartsTests.test_resolution_then_recurrence_is_a_new_incident_delivered_accurately) ... ok
+test_resolving_twice_or_without_an_open_incident_changes_nothing (test_incidents.RecurrenceAcrossRestartsTests.test_resolving_twice_or_without_an_open_incident_changes_nothing) ... ok
+test_a_third_occurrence_after_a_second_resolution_is_its_own_incident (test_incidents.RecurrenceTests.test_a_third_occurrence_after_a_second_resolution_is_its_own_incident) ... ok
+test_an_older_incident_delivered_late_never_silences_the_current_one (test_incidents.RecurrenceTests.test_an_older_incident_delivered_late_never_silences_the_current_one) ... ok
+test_each_late_copy_carries_its_own_incident_resolution (test_incidents.RecurrenceTests.test_each_late_copy_carries_its_own_incident_resolution) ... ok
+test_registration_happens_before_suppression (test_incidents.RecurrenceTests.test_registration_happens_before_suppression) ... ok
+test_resolution_then_recurrence_is_a_new_incident_delivered_accurately (test_incidents.RecurrenceTests.test_resolution_then_recurrence_is_a_new_incident_delivered_accurately) ... ok
+test_resolving_twice_or_without_an_open_incident_changes_nothing (test_incidents.RecurrenceTests.test_resolving_twice_or_without_an_open_incident_changes_nothing) ... ok
+test_a_failing_channel_keeps_its_retry_time_even_with_an_overdue_old_entry (test_incidents.RetrySpacingAcrossRestartsTests.test_a_failing_channel_keeps_its_retry_time_even_with_an_overdue_old_entry) ... ok
+test_a_failing_channel_keeps_its_retry_time_even_with_an_overdue_old_entry (test_incidents.RetrySpacingTests.test_a_failing_channel_keeps_its_retry_time_even_with_an_overdue_old_entry) ... ok
+test_open_stale_buy_is_cancelled_before_following_the_new_target (test_intraday_recovery.BlockedBuyAndCarryoverTests.test_open_stale_buy_is_cancelled_before_following_the_new_target) ... ok
+test_proceeds_lag_carries_over_then_next_open_window_buys (test_intraday_recovery.BlockedBuyAndCarryoverTests.test_proceeds_lag_carries_over_then_next_open_window_buys) ... ok
+test_refused_buy_backs_off_then_succeeds_once (test_intraday_recovery.BlockedBuyAndCarryoverTests.test_refused_buy_backs_off_then_succeeds_once) ... ok
+test_signal_back_to_defensive_supersedes_the_stale_return_buy (test_intraday_recovery.BlockedBuyAndCarryoverTests.test_signal_back_to_defensive_supersedes_the_stale_return_buy) ... ok
+test_run_after_the_open_window_plans_switch_recovery (test_intraday_recovery.CliRecoveryTests.test_run_after_the_open_window_plans_switch_recovery) ... ok
+test_early_close_day_uses_the_calendar_close (test_intraday_recovery.CloseAndCapTests.test_early_close_day_uses_the_calendar_close) ... ok
+test_no_new_recovery_order_after_the_close_buffer (test_intraday_recovery.CloseAndCapTests.test_no_new_recovery_order_after_the_close_buffer) ... ok
+test_restart_near_the_close_continues_without_duplicates (test_intraday_recovery.CloseAndCapTests.test_restart_near_the_close_continues_without_duplicates) ... ok
+test_session_cap_during_recovery_holds_and_reports (test_intraday_recovery.CloseAndCapTests.test_session_cap_during_recovery_holds_and_reports) ... ok
+test_unconfirmed_cancel_at_the_close_survives_the_night_then_locks_only_in_a_later_session (test_intraday_recovery.CloseAndCapTests.test_unconfirmed_cancel_at_the_close_survives_the_night_then_locks_only_in_a_later_session) ... ok
+test_open_window_outage_then_defensive_switch_completes_from_proceeds_only (test_intraday_recovery.DefensiveAndReturnRecoveryTests.test_open_window_outage_then_defensive_switch_completes_from_proceeds_only) ... ok
+test_partial_fill_then_cancel_then_only_the_rest_is_sold (test_intraday_recovery.DefensiveAndReturnRecoveryTests.test_partial_fill_then_cancel_then_only_the_rest_is_sold) ... ok
+test_return_switch_after_missing_the_whole_window (test_intraday_recovery.DefensiveAndReturnRecoveryTests.test_return_switch_after_missing_the_whole_window) ... ok
+test_new_deposit_is_not_invested_after_the_open_window (test_intraday_recovery.DepositAndTaxBoundaryTests.test_new_deposit_is_not_invested_after_the_open_window) ... ok
+test_switch_recovery_with_concurrent_deposit_buys_only_the_proceeds (test_intraday_recovery.DepositAndTaxBoundaryTests.test_switch_recovery_with_concurrent_deposit_buys_only_the_proceeds) ... ok
+test_plan_of_another_account_or_with_changed_holdings_never_starts (test_livecheck.AccountBindingTests.test_plan_of_another_account_or_with_changed_holdings_never_starts) ... ok
+test_a_request_outside_the_plan_leaves_no_intent_row_and_reaches_no_broker (test_livecheck.BudgetTests.test_a_request_outside_the_plan_leaves_no_intent_row_and_reaches_no_broker) ... ok
+test_authorization_refuses_anything_outside_the_plan (test_livecheck.BudgetTests.test_authorization_refuses_anything_outside_the_plan) ... ok
+test_budget_never_grows_with_account_cash_deposits_or_price_moves (test_livecheck.BudgetTests.test_budget_never_grows_with_account_cash_deposits_or_price_moves) ... ok
+test_open_buy_is_reserved_and_counted_once (test_livecheck.BudgetTests.test_open_buy_is_reserved_and_counted_once) ... ok
+test_proceeds_not_yet_orderable_waits_instead_of_using_other_money (test_livecheck.BudgetTests.test_proceeds_not_yet_orderable_waits_instead_of_using_other_money) ... ok
+test_reuse_with_plenty_of_existing_cash_is_inconclusive (test_livecheck.BudgetTests.test_reuse_with_plenty_of_existing_cash_is_inconclusive) ... ok
+test_sale_proceeds_reuse_is_confirmed_only_when_existing_cash_was_not_enough (test_livecheck.BudgetTests.test_sale_proceeds_reuse_is_confirmed_only_when_existing_cash_was_not_enough) ... ok
+test_stop_arriving_between_intent_and_send_means_nothing_is_sent (test_livecheck.BudgetTests.test_stop_arriving_between_intent_and_send_means_nothing_is_sent) ... ok
+test_a_held_account_lock_means_nothing_is_sent (test_livecheck.CliTests.test_a_held_account_lock_means_nothing_is_sent) ... ok
+test_execute_sends_only_the_plan_step_and_pauses_the_general_run (test_livecheck.CliTests.test_execute_sends_only_the_plan_step_and_pauses_the_general_run) ... ok
+test_marker_pauses_a_run_from_another_state_folder (test_livecheck.CliTests.test_marker_pauses_a_run_from_another_state_folder) ... ok
+test_plan_status_and_missing_options_send_no_financial_request (test_livecheck.CliTests.test_plan_status_and_missing_options_send_no_financial_request) ... ok
+test_transport_filter_refuses_everything_else (test_livecheck.CliTests.test_transport_filter_refuses_everything_else) ... ok
+test_kill_at_send_done_and_completion_boundaries_never_duplicates_or_loses (test_livecheck.CrashTests.test_kill_at_send_done_and_completion_boundaries_never_duplicates_or_loses) ... ok
+test_kill_right_after_the_send_start_record_stays_unknown_and_is_never_resent (test_livecheck.CrashTests.test_kill_right_after_the_send_start_record_stays_unknown_and_is_never_resent) ... ok
+test_outside_window_reservations_and_bad_quotes_send_nothing (test_livecheck.GateTests.test_outside_window_reservations_and_bad_quotes_send_nothing) ... ok
+test_sell_only_blocks_the_buy_but_not_the_check_sell (test_livecheck.GateTests.test_sell_only_blocks_the_buy_but_not_the_check_sell) ... ok
+test_window_closing_during_the_send_wait_sends_nothing (test_livecheck.GateTests.test_window_closing_during_the_send_wait_sends_nothing) ... ok
+test_non_strategy_holdings_still_stop_the_general_engine_and_migrate_keeps_its_meaning (test_livecheck.GeneralRunUnchangedTests.test_non_strategy_holdings_still_stop_the_general_engine_and_migrate_keeps_its_meaning) ... ok
+test_schema_is_added_to_an_existing_journal_without_touching_other_tables (test_livecheck.GeneralRunUnchangedTests.test_schema_is_added_to_an_existing_journal_without_touching_other_tables) ... ok
+test_check_engine_refuses_while_a_general_request_is_unresolved (test_livecheck.IsolationTests.test_check_engine_refuses_while_a_general_request_is_unresolved) ... ok
+test_general_engine_ignores_owned_rows_and_owned_rows_feed_no_switch_or_tax_book (test_livecheck.IsolationTests.test_general_engine_ignores_owned_rows_and_owned_rows_feed_no_switch_or_tax_book) ... ok
+test_a_new_plan_supersedes_an_unstarted_one_and_only_one_can_run (test_livecheck.PlanTests.test_a_new_plan_supersedes_an_unstarted_one_and_only_one_can_run) ... ok
+test_plan_is_read_only_and_binds_account_baseline_budget_and_steps (test_livecheck.PlanTests.test_plan_is_read_only_and_binds_account_baseline_budget_and_steps) ... ok
+test_refusals_store_nothing_and_send_nothing (test_livecheck.PlanTests.test_refusals_store_nothing_and_send_nothing) ... ok
+test_cancelled_without_fill_retries_the_same_step_with_a_fresh_quote (test_livecheck.RecoveryTests.test_cancelled_without_fill_retries_the_same_step_with_a_fresh_quote) ... ok
+test_lost_reply_is_matched_once_and_never_resent (test_livecheck.RecoveryTests.test_lost_reply_is_matched_once_and_never_resent) ... ok
+test_protected_holdings_change_holds_new_requests (test_livecheck.RecoveryTests.test_protected_holdings_change_holds_new_requests) ... ok
+test_stop_cancels_own_open_order_and_never_sells_without_unwind (test_livecheck.RecoveryTests.test_stop_cancels_own_open_order_and_never_sells_without_unwind) ... ok
+test_stop_with_a_test_share_left_keeps_the_pause_until_an_explicit_unwind (test_livecheck.RecoveryTests.test_stop_with_a_test_share_left_keeps_the_pause_until_an_explicit_unwind) ... ok
+test_timeout_cancel_then_late_fill_counts_the_real_fill_once (test_livecheck.RecoveryTests.test_timeout_cancel_then_late_fill_counts_the_real_fill_once) ... ok
+test_a_finished_plan_never_trades_again (test_livecheck.RoundTripTests.test_a_finished_plan_never_trades_again) ... ok
+test_each_step_waits_for_a_terminal_fill_reflected_in_holdings (test_livecheck.RoundTripTests.test_each_step_waits_for_a_terminal_fill_reflected_in_holdings) ... ok
+test_six_one_share_steps_end_in_usd_and_never_touch_other_holdings (test_livecheck.RoundTripTests.test_six_one_share_steps_end_in_usd_and_never_touch_other_holdings) ... ok
+test_tax_reserves_and_switch_state_are_untouched_by_check_trades (test_livecheck.RoundTripTests.test_tax_reserves_and_switch_state_are_untouched_by_check_trades) ... ok
+test_resume_during_a_tax_outage_still_reconciles_the_open_order (test_livecheck_fixes.CliStopTests.test_resume_during_a_tax_outage_still_reconciles_the_open_order) ... ok
+test_stop_reaches_a_running_executor_which_cancels_its_open_order (test_livecheck_fixes.CliStopTests.test_stop_reaches_a_running_executor_which_cancels_its_open_order) ... ok
+test_stop_without_an_executor_records_the_request_and_says_cancel_is_not_sent (test_livecheck_fixes.CliStopTests.test_stop_without_an_executor_records_the_request_and_says_cancel_is_not_sent) ... ok
+test_a_marker_left_by_a_finished_or_unstarted_plan_is_released (test_livecheck_fixes.OwnershipTests.test_a_marker_left_by_a_finished_or_unstarted_plan_is_released) ... ok
+test_a_second_state_folder_cannot_start_a_check_on_the_same_account (test_livecheck_fixes.OwnershipTests.test_a_second_state_folder_cannot_start_a_check_on_the_same_account) ... ok
+test_running_without_the_marker_reclaims_it_before_any_order_or_refuses (test_livecheck_fixes.OwnershipTests.test_running_without_the_marker_reclaims_it_before_any_order_or_refuses) ... ok
+test_prepared_hook_failure_rolls_back_the_intent_and_evidence (test_livecheck_fixes.ReadHelperTests.test_prepared_hook_failure_rolls_back_the_intent_and_evidence) ... ok
+test_reading_a_plan_inside_a_transaction_never_commits_it (test_livecheck_fixes.ReadHelperTests.test_reading_a_plan_inside_a_transaction_never_commits_it) ... ok
+test_kill_between_claiming_the_account_and_marking_running_recovers (test_livecheck_fixes.StartCrashTests.test_kill_between_claiming_the_account_and_marking_running_recovers) ... ok
+test_unknown_tax_reserve_still_settles_own_orders_and_holds_only_buys (test_livecheck_fixes.TaxOutageTests.test_unknown_tax_reserve_still_settles_own_orders_and_holds_only_buys) ... ok
+test_active_reservation_blocks_order_and_is_not_cancelled (test_market_reservations.EngineReservationGateTests.test_active_reservation_blocks_order_and_is_not_cancelled) ... ok
+test_broker_without_lookup_fails_closed (test_market_reservations.EngineReservationGateTests.test_broker_without_lookup_fails_closed) ... ok
+test_fx_is_also_blocked_but_only_when_fx_would_be_sent (test_market_reservations.EngineReservationGateTests.test_fx_is_also_blocked_but_only_when_fx_would_be_sent) ... ok
+test_lookup_failure_blocks_order (test_market_reservations.EngineReservationGateTests.test_lookup_failure_blocks_order) ... ok
+test_market_block_reason_is_raised_after_reconciliation (test_market_reservations.EngineReservationGateTests.test_market_block_reason_is_raised_after_reconciliation) ... ok
+test_no_reservations_allows_new_order (test_market_reservations.EngineReservationGateTests.test_no_reservations_allows_new_order) ... ok
+test_outside_window_does_not_query (test_market_reservations.EngineReservationGateTests.test_outside_window_does_not_query) ... ok
+test_tracked_order_status_reads_continue_while_new_orders_blocked (test_market_reservations.EngineReservationGateTests.test_tracked_order_status_reads_continue_while_new_orders_blocked) ... ok
+test_unexpected_lookup_error_blocks_without_leaking_text (test_market_reservations.EngineReservationGateTests.test_unexpected_lookup_error_blocks_without_leaking_text) ... ok
+test_active_listed_and_cancelled_excluded (test_market_reservations.MeritzReservationLookupTests.test_active_listed_and_cancelled_excluded) ... ok
+test_api_error_is_failure (test_market_reservations.MeritzReservationLookupTests.test_api_error_is_failure) ... ok
+test_default_lookback_is_not_complete (test_market_reservations.MeritzReservationLookupTests.test_default_lookback_is_not_complete) ... ok
+test_doctor_lists_lookup_failure_as_engine_blocker (test_market_reservations.MeritzReservationLookupTests.test_doctor_lists_lookup_failure_as_engine_blocker) ... ok
+test_doctor_reports_coverage (test_market_reservations.MeritzReservationLookupTests.test_doctor_reports_coverage) ... ok
+test_future_start_date_stops (test_market_reservations.MeritzReservationLookupTests.test_future_start_date_stops) ... ok
+test_ignored_date_filter_is_incomplete (test_market_reservations.MeritzReservationLookupTests.test_ignored_date_filter_is_incomplete) ... ok
+test_missing_cursor_is_incomplete (test_market_reservations.MeritzReservationLookupTests.test_missing_cursor_is_incomplete) ... ok
+test_none_sends_all_filter_fields (test_market_reservations.MeritzReservationLookupTests.test_none_sends_all_filter_fields) ... ok
+test_old_active_reservation_missed_by_lookback_found_from_start_date (test_market_reservations.MeritzReservationLookupTests.test_old_active_reservation_missed_by_lookback_found_from_start_date) ... ok
+test_repeated_row_is_incomplete (test_market_reservations.MeritzReservationLookupTests.test_repeated_row_is_incomplete) ... ok
+test_row_without_documented_fields_is_incomplete (test_market_reservations.MeritzReservationLookupTests.test_row_without_documented_fields_is_incomplete) ... ok
+test_start_date_is_split_into_contiguous_windows (test_market_reservations.MeritzReservationLookupTests.test_start_date_is_split_into_contiguous_windows) ... ok
+test_011_alone_is_not_regular (test_market_reservations.RegularSessionCheckTests.test_011_alone_is_not_regular) ... ok
+test_011_with_matching_segment_is_regular_but_noted (test_market_reservations.RegularSessionCheckTests.test_011_with_matching_segment_is_regular_but_noted) ... ok
+test_after_market (test_market_reservations.RegularSessionCheckTests.test_after_market) ... ok
+test_daylight_saving_switches (test_market_reservations.RegularSessionCheckTests.test_daylight_saving_switches) ... ok
+test_early_close (test_market_reservations.RegularSessionCheckTests.test_early_close) ... ok
+test_holiday (test_market_reservations.RegularSessionCheckTests.test_holiday) ... ok
+test_kst_dates_around_midnight_for_2230_0500_segment (test_market_reservations.RegularSessionCheckTests.test_kst_dates_around_midnight_for_2230_0500_segment) ... ok
+test_malformed_and_mismatched_responses (test_market_reservations.RegularSessionCheckTests.test_malformed_and_mismatched_responses) ... ok
+test_pre_market (test_market_reservations.RegularSessionCheckTests.test_pre_market) ... ok
+test_read_failure_is_not_open (test_market_reservations.RegularSessionCheckTests.test_read_failure_is_not_open) ... ok
+test_regular_summer_session (test_market_reservations.RegularSessionCheckTests.test_regular_summer_session) ... ok
+test_segment_crossing_midnight (test_market_reservations.RegularSessionCheckTests.test_segment_crossing_midnight) ... ok
+test_live_blocks_when_coverage_unverified (test_market_reservations.ReservationCoverageGateTests.test_live_blocks_when_coverage_unverified) ... ok
+test_live_fx_also_blocked_when_coverage_unverified (test_market_reservations.ReservationCoverageGateTests.test_live_fx_also_blocked_when_coverage_unverified) ... ok
+test_live_proceeds_when_coverage_complete (test_market_reservations.ReservationCoverageGateTests.test_live_proceeds_when_coverage_complete) ... ok
+test_observe_plans_but_records_unverified (test_market_reservations.ReservationCoverageGateTests.test_observe_plans_but_records_unverified) ... ok
+test_start_date_setting_is_validated (test_market_reservations.ReservationCoverageGateTests.test_start_date_setting_is_validated) ... ok
+test_doctor_confirms_matching_session (test_market_reservations.RunAndDoctorMarketTests.test_doctor_confirms_matching_session) ... ok
+test_doctor_reports_session_check_and_blocker (test_market_reservations.RunAndDoctorMarketTests.test_doctor_reports_session_check_and_blocker) ... ok
+test_run_blocks_fx_plan_when_reservation_lookup_incomplete (test_market_reservations.RunAndDoctorMarketTests.test_run_blocks_fx_plan_when_reservation_lookup_incomplete) ... ok
+test_run_blocks_order_plan_with_active_reservation (test_market_reservations.RunAndDoctorMarketTests.test_run_blocks_order_plan_with_active_reservation) ... ok
+test_run_blocks_with_reason_when_011_segment_mismatches (test_market_reservations.RunAndDoctorMarketTests.test_run_blocks_with_reason_when_011_segment_mismatches) ... ok
+test_run_finds_old_reservation_only_with_start_date (test_market_reservations.RunAndDoctorMarketTests.test_run_finds_old_reservation_only_with_start_date) ... ok
+test_alert_texts_carry_no_secret_or_identifiers (test_monitor.EvaluateTests.test_alert_texts_carry_no_secret_or_identifiers) ... ok
+test_alive_but_locked_is_distinct_from_down (test_monitor.EvaluateTests.test_alive_but_locked_is_distinct_from_down) ... ok
+test_failed_primary_channel_falls_back_and_retries_later (test_monitor.EvaluateTests.test_failed_primary_channel_falls_back_and_retries_later) ... ok
+test_healthy_then_mac_down_is_detected_and_recovery_is_reported (test_monitor.EvaluateTests.test_healthy_then_mac_down_is_detected_and_recovery_is_reported) ... ok
+test_only_the_signal_is_stale (test_monitor.EvaluateTests.test_only_the_signal_is_stale) ... ok
+test_switch_overdue_uses_the_calendar_close_including_early_closes (test_monitor.EvaluateTests.test_switch_overdue_uses_the_calendar_close_including_early_closes) ... ok
+test_payload_is_a_whitelist_without_amounts_ids_or_errors (test_monitor.PayloadTests.test_payload_is_a_whitelist_without_amounts_ids_or_errors) ... ok
+test_sequence_is_persisted_across_restarts (test_monitor.PayloadTests.test_sequence_is_persisted_across_restarts) ... ok
+test_signature_replay_and_duplicates (test_monitor.ReceiveTests.test_signature_replay_and_duplicates) ... ok
+test_unknown_instance_is_refused (test_monitor.ReceiveTests.test_unknown_instance_is_refused) ... ok
+test_monitor_outage_never_changes_the_run_result (test_monitor.TradingPathTests.test_monitor_outage_never_changes_the_run_result) ... ok
+test_a_completed_switch_with_leftover_cash_raises_nothing (test_operations.DelayAlertTests.test_a_completed_switch_with_leftover_cash_raises_nothing) ... ok
+test_daylight_saving_shift_moves_the_alert_with_the_open (test_operations.DelayAlertTests.test_daylight_saving_shift_moves_the_alert_with_the_open) ... ok
+test_final_notice_at_the_recovery_cutoff_and_after_a_sleeping_close (test_operations.DelayAlertTests.test_final_notice_at_the_recovery_cutoff_and_after_a_sleeping_close) ... ok
+test_holiday_half_day_and_overnight_never_count_as_stall (test_operations.DelayAlertTests.test_holiday_half_day_and_overnight_never_count_as_stall) ... ok
+test_observe_never_raises_switch_alerts (test_operations.DelayAlertTests.test_observe_never_raises_switch_alerts) ... ok
+test_query_failure_and_a_zero_result_are_different_reasons (test_operations.DelayAlertTests.test_query_failure_and_a_zero_result_are_different_reasons) ... ok
+test_real_progress_resets_the_stall_clock_and_reads_alone_do_not (test_operations.DelayAlertTests.test_real_progress_resets_the_stall_clock_and_reads_alone_do_not) ... ok
+test_restart_keeps_alert_history_and_completion_is_announced_once (test_operations.DelayAlertTests.test_restart_keeps_alert_history_and_completion_is_announced_once) ... ok
+test_three_delay_kinds_are_labelled_apart (test_operations.DelayAlertTests.test_three_delay_kinds_are_labelled_apart) ... ok
+test_undelivered_local_alert_reaches_the_monitor_and_a_delivered_final_is_not_repeated (test_operations.DelayAlertTests.test_undelivered_local_alert_reaches_the_monitor_and_a_delivered_final_is_not_repeated) ... ok
+test_waiting_with_healthy_runs_raises_the_early_then_the_stall_alert (test_operations.DelayAlertTests.test_waiting_with_healthy_runs_raises_the_early_then_the_stall_alert) ... ok
+test_a_resent_hold_says_when_it_happened_and_that_it_is_over (test_operations.LateNoticeTests.test_a_resent_hold_says_when_it_happened_and_that_it_is_over) ... ok
+test_hold_cleared_notice_carries_both_times_and_no_raw_figures (test_operations.LateNoticeTests.test_hold_cleared_notice_carries_both_times_and_no_raw_figures) ... ok
+test_lost_reply_then_recovery_converges_without_resend_and_records_progress (test_operations.NetworkRecoveryTests.test_lost_reply_then_recovery_converges_without_resend_and_records_progress) ... ok
+test_generator_writes_files_only_and_the_daemon_runs_as_the_user (test_operations.ServiceTests.test_generator_writes_files_only_and_the_daemon_runs_as_the_user) ... ok
+test_status_reads_installation_and_flags_two_loaded_services (test_operations.ServiceTests.test_status_reads_installation_and_flags_two_loaded_services) ... ok
+test_other_chats_get_nothing_and_acknowledgements_change_nothing (test_operations.TelegramStatusTests.test_other_chats_get_nothing_and_acknowledgements_change_nothing) ... ok
+test_read_only_pass_stops_at_the_first_plan_change (test_operations.TelegramStatusTests.test_read_only_pass_stops_at_the_first_plan_change) ... ok
+test_run_answers_status_while_another_process_holds_the_state_lock (test_operations.TelegramStatusTests.test_run_answers_status_while_another_process_holds_the_state_lock) ... ok
+test_stale_state_is_never_presented_as_current (test_operations.TelegramStatusTests.test_stale_state_is_never_presented_as_current) ... ok
+test_status_and_issues_answer_from_local_state_without_sensitive_figures (test_operations.TelegramStatusTests.test_status_and_issues_answer_from_local_state_without_sensitive_figures) ... ok
+test_housekeeping_still_answers_status_when_the_tax_plan_cannot_be_built (test_operations_fixes.ChatWithBrokenTaxPlanTests.test_housekeeping_still_answers_status_when_the_tax_plan_cannot_be_built) ... ok
+test_status_survives_a_broken_tax_schema (test_operations_fixes.ChatWithBrokenTaxPlanTests.test_status_survives_a_broken_tax_schema) ... ok
+test_telegram_command_answers_when_make_plan_fails (test_operations_fixes.ChatWithBrokenTaxPlanTests.test_telegram_command_answers_when_make_plan_fails) ... ok
+test_a_copy_of_an_occurrence_resolved_later_still_says_so (test_operations_fixes.OccurrenceTests.test_a_copy_of_an_occurrence_resolved_later_still_says_so) ... ok
+test_a_recurrence_never_borrows_the_previous_resolution (test_operations_fixes.OccurrenceTests.test_a_recurrence_never_borrows_the_previous_resolution) ... ok
+test_a_recurrence_while_the_old_copy_is_still_pending_is_dated_by_the_new_occurrence (test_operations_fixes.OccurrenceTests.test_a_recurrence_while_the_old_copy_is_still_pending_is_dated_by_the_new_occurrence) ... ok
+test_mac_banner_alone_does_not_count_as_delivered (test_operations_fixes.RemoteDeliveryTests.test_mac_banner_alone_does_not_count_as_delivered) ... ok
+test_telegram_success_counts_as_delivered (test_operations_fixes.RemoteDeliveryTests.test_telegram_success_counts_as_delivered) ... ok
+test_without_any_remote_channel_the_monitor_is_not_silenced (test_operations_fixes.RemoteDeliveryTests.test_without_any_remote_channel_the_monitor_is_not_silenced) ... ok
+test_the_macos_banner_exists_only_on_macos (test_portability.ChannelTests.test_the_macos_banner_exists_only_on_macos) ... ok
+test_a_journal_that_fails_to_open_keeps_no_handle (test_portability.ConnectionCloseTests.test_a_journal_that_fails_to_open_keeps_no_handle) ... ok
+test_run_closes_its_journal_when_a_step_before_trading_fails (test_portability.ConnectionCloseTests.test_run_closes_its_journal_when_a_step_before_trading_fails) ... ok
+test_status_closes_its_journal (test_portability.ConnectionCloseTests.test_status_closes_its_journal) ... ok
+test_status_closes_its_journal_when_a_read_fails (test_portability.ConnectionCloseTests.test_status_closes_its_journal_when_a_read_fails) ... ok
+test_config_in_a_korean_path_with_spaces_from_another_working_directory (test_portability.PathTests.test_config_in_a_korean_path_with_spaces_from_another_working_directory) ... ok
+test_posix_mode_bits (test_portability.PermissionReportTests.test_posix_mode_bits) ... skipped 'POSIX mode bits'
+test_windows_acl_is_judged_by_sid_and_a_failed_query_is_never_private (test_portability.PermissionReportTests.test_windows_acl_is_judged_by_sid_and_a_failed_query_is_never_private) ... ok
+test_windows_private_returns_false_because_chmod_cannot_set_an_acl (test_portability.PermissionReportTests.test_windows_private_returns_false_because_chmod_cannot_set_an_acl) ... ok
+test_a_blocking_lock_waits_for_the_other_process (test_portability.ProcessLockTests.test_a_blocking_lock_waits_for_the_other_process) ... ok
+test_a_lock_held_by_another_process_refuses_and_its_death_releases_it (test_portability.ProcessLockTests.test_a_lock_held_by_another_process_refuses_and_its_death_releases_it) ... ok
+test_different_accounts_never_block_each_other (test_portability.ProcessLockTests.test_different_accounts_never_block_each_other) ... ok
+test_windows_branch_retries_a_target_held_open_then_raises_without_losing_the_old_file (test_portability.ReplaceTests.test_windows_branch_retries_a_target_held_open_then_raises_without_losing_the_old_file) ... ok
+test_every_text_file_access_in_the_program_names_its_encoding (test_portability.TextEncodingTests.test_every_text_file_access_in_the_program_names_its_encoding) ... ok
+test_utf8_config_and_secrets_with_korean_text_load_under_a_cp949_default (test_portability.TextEncodingTests.test_utf8_config_and_secrets_with_korean_text_load_under_a_cp949_default) ... ok
+test_results_do_not_depend_on_the_machine_time_zone (test_portability.TimeZoneTests.test_results_do_not_depend_on_the_machine_time_zone) ... skipped 'TZ variable semantics differ on Windows; run the probe with another system zone'
+test_pages_preserve_cursor_whitespace_and_request_all_records (test_recovery.AdapterRecoveryTests.test_pages_preserve_cursor_whitespace_and_request_all_records) ... ok
+test_prior_date_fully_filled_order_recovered_from_detail (test_recovery.AdapterRecoveryTests.test_prior_date_fully_filled_order_recovered_from_detail) ... ok
+test_prior_date_partial_is_not_assumed_cancelled (test_recovery.AdapterRecoveryTests.test_prior_date_partial_is_not_assumed_cancelled) ... ok
+test_repeated_cursor_stops_instead_of_returning_partial_ledger (test_recovery.AdapterRecoveryTests.test_repeated_cursor_stops_instead_of_returning_partial_ledger) ... ok
+test_same_number_wrong_symbol_is_not_reconciled (test_recovery.AdapterRecoveryTests.test_same_number_wrong_symbol_is_not_reconciled) ... ok
+test_state_cannot_bind_to_different_api_key (test_recovery.AdapterRecoveryTests.test_state_cannot_bind_to_different_api_key) ... ok
+test_token_from_different_key_is_not_reused (test_recovery.AdapterRecoveryTests.test_token_from_different_key_is_not_reused) ... ok
+test_unknown_order_code_stops (test_recovery.AdapterRecoveryTests.test_unknown_order_code_stops) ... ok
+test_more_than_252_missing_sessions_are_all_replayed (test_recovery.HistoryGapTests.test_more_than_252_missing_sessions_are_all_replayed) ... ok
+test_excess_fill_quantity_blocks_next_action (test_recovery.ManagementTests.test_excess_fill_quantity_blocks_next_action) ... ok
+test_manage_existing_order_after_new_order_window (test_recovery.ManagementTests.test_manage_existing_order_after_new_order_window) ... ok
+test_no_cancel_mutation_outside_market (test_recovery.ManagementTests.test_no_cancel_mutation_outside_market) ... ok
+test_small_deposit_can_buy_one_share_with_fee_buffer (test_recovery.ManagementTests.test_small_deposit_can_buy_one_share_with_fee_buffer) ... ok
+test_exact_decimal_thresholds (test_recovery.SignalBoundaryTests.test_exact_decimal_thresholds) ... ok
+test_just_above_exit_does_not_exit (test_recovery.SignalBoundaryTests.test_just_above_exit_does_not_exit) ... ok
+test_changed_scenario_cannot_reuse_state (test_replay.ReplayTests.test_changed_scenario_cannot_reuse_state) ... ok
+test_close_does_not_leak_into_same_session_signal (test_replay.ReplayTests.test_close_does_not_leak_into_same_session_signal) ... ok
+test_paper_does_not_open_observer_state (test_replay.ReplayTests.test_paper_does_not_open_observer_state) ... ok
+test_persistent_deposit_idempotency (test_replay.ReplayTests.test_persistent_deposit_idempotency) ... ok
+test_persistent_partial_fill_then_restart_then_full_fill (test_replay.ReplayTests.test_persistent_partial_fill_then_restart_then_full_fill) ... ok
+test_repeated_finished_run_neither_deposits_nor_orders_again (test_replay.ReplayTests.test_repeated_finished_run_neither_deposits_nor_orders_again) ... ok
+test_resume_is_identical_to_uninterrupted_run_without_network (test_replay.ReplayTests.test_resume_is_identical_to_uninterrupted_run_without_network) ... ok
+test_side_effect_before_lost_receipt_is_not_repeated (test_replay.ReplayTests.test_side_effect_before_lost_receipt_is_not_repeated) ... ok
+test_fx_uses_customer_applied_buy_rate_and_no_duplicate_fee (test_schema_contract.OfficialSchemaTests.test_fx_uses_customer_applied_buy_rate_and_no_duplicate_fee) ... skipped 'official portal export not present; see README to download it'
+test_order_buy_sell_and_cancel_request_fields_match_official_schema (test_schema_contract.OfficialSchemaTests.test_order_buy_sell_and_cancel_request_fields_match_official_schema) ... skipped 'official portal export not present; see README to download it'
+test_plan_shows_the_buy_held_and_the_sell_planned_when_sell_only (test_sgov.DoctorSellOnlyTests.test_plan_shows_the_buy_held_and_the_sell_planned_when_sell_only) ... ok
+test_confirmed_route_is_shown_and_a_conflicting_one_is_flagged (test_sgov.DoctorSgovTests.test_confirmed_route_is_shown_and_a_conflicting_one_is_flagged) ... ok
+test_holdings_state_never_counts_qqq_as_the_defensive_holding (test_sgov.DoctorSgovTests.test_holdings_state_never_counts_qqq_as_the_defensive_holding) ... ok
+test_signal_and_holdings_are_shown_apart_and_the_route_probe_is_evidence_only (test_sgov.DoctorSgovTests.test_signal_and_holdings_are_shown_apart_and_the_route_probe_is_evidence_only) ... ok
+test_round_trip_never_routes_through_qqq (test_sgov.EngineSgovTests.test_round_trip_never_routes_through_qqq) ... ok
+test_live_path_sells_the_held_tqqq_when_it_is_sell_only (test_sgov.MeritzSellOnlyTests.test_live_path_sells_the_held_tqqq_when_it_is_sell_only) ... ok
+test_sell_only_and_units_are_per_side_and_halts_stop_both (test_sgov.MeritzSellOnlyTests.test_sell_only_and_units_are_per_side_and_halts_stop_both) ... ok
+test_sgov_quote_and_order_use_the_confirmed_market_and_its_documented_exchange (test_sgov.MeritzSgovPathTests.test_sgov_quote_and_order_use_the_confirmed_market_and_its_documented_exchange) ... ok
+test_unconfirmed_sgov_sends_nothing (test_sgov.MeritzSgovPathTests.test_unconfirmed_sgov_sends_nothing) ... ok
+test_wrong_market_unit_or_restriction_is_refused_without_a_fallback (test_sgov.MeritzSgovPathTests.test_wrong_market_unit_or_restriction_is_refused_without_a_fallback) ... ok
+test_example_config_leaves_sgov_unconfirmed_and_migrates_nothing (test_sgov.RouteTests.test_example_config_leaves_sgov_unconfirmed_and_migrates_nothing) ... ok
+test_no_default_market_for_an_unconfirmed_instrument (test_sgov.RouteTests.test_no_default_market_for_an_unconfirmed_instrument) ... ok
+test_overrides_cannot_redirect_reviewed_routes_or_use_unknown_codes (test_sgov.RouteTests.test_overrides_cannot_redirect_reviewed_routes_or_use_unknown_codes) ... ok
+test_reviewed_routes_and_documented_pairs (test_sgov.RouteTests.test_reviewed_routes_and_documented_pairs) ... ok
+test_intraday_recovery_sell_is_allowed_while_sell_only (test_sgov.SellOnlyTests.test_intraday_recovery_sell_is_allowed_while_sell_only) ... ok
+test_sgov_return_sell_goes_out_and_the_tqqq_buy_is_held (test_sgov.SellOnlyTests.test_sgov_return_sell_goes_out_and_the_tqqq_buy_is_held) ... ok
+test_tqqq_exit_sell_goes_out_and_the_sgov_buy_is_held (test_sgov.SellOnlyTests.test_tqqq_exit_sell_goes_out_and_the_sgov_buy_is_held) ... ok
+test_refresh_reads_only_qqq_closes_and_sgov_prices_cannot_move_the_signal (test_sgov.SignalPreservationTests.test_refresh_reads_only_qqq_closes_and_sgov_prices_cannot_move_the_signal) ... ok
+test_same_qqq_history_gives_the_same_switch_dates_and_expiry_flags (test_sgov.SignalPreservationTests.test_same_qqq_history_gives_the_same_switch_dates_and_expiry_flags) ... <project>\tests\test_sgov.py:30: ResourceWarning: unclosed file <_io.TextIOWrapper name='<project>\\qqq_seed.csv' mode='r' encoding='cp949'>
+  rows = list(csv.DictReader(open(ROOT / "qqq_seed.csv")))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_symbols_are_defined_once_and_the_signal_is_qqq (test_sgov.SignalPreservationTests.test_symbols_are_defined_once_and_the_signal_is_qqq) ... ok
+test_done_qqq_buy_missing_from_the_old_intent_is_booked_there_before_the_carry (test_sgov_migration.LegacyRequestTests.test_done_qqq_buy_missing_from_the_old_intent_is_booked_there_before_the_carry) ... ok
+test_open_qqq_buy_is_cancelled_with_its_receipt_and_the_budget_carries_once (test_sgov_migration.LegacyRequestTests.test_open_qqq_buy_is_cancelled_with_its_receipt_and_the_budget_carries_once) ... ok
+test_open_tqqq_exit_sell_of_the_old_version_is_not_cancelled_as_a_conflict (test_sgov_migration.LegacyRequestTests.test_open_tqqq_exit_sell_of_the_old_version_is_not_cancelled_as_a_conflict) ... ok
+test_unknown_qqq_buy_is_matched_by_its_original_identity_and_never_resent (test_sgov_migration.LegacyRequestTests.test_unknown_qqq_buy_is_matched_by_its_original_identity_and_never_resent) ... ok
+test_mid_band_is_never_reset_to_tqqq (test_sgov_migration.SignalCacheTests.test_mid_band_is_never_reset_to_tqqq) ... ok
+test_same_day_cache_of_the_old_version_is_rebuilt_from_the_same_closes_once (test_sgov_migration.SignalCacheTests.test_same_day_cache_of_the_old_version_is_rebuilt_from_the_same_closes_once) ... ok
+test_short_or_stale_history_gives_no_target (test_sgov_migration.SignalCacheTests.test_short_or_stale_history_gives_no_target) ... ok
+test_kill_inside_the_migration_leaves_the_old_cache_and_a_restart_applies_it_once (test_sgov_migration.SignalMigrationCrashTests.test_kill_inside_the_migration_leaves_the_old_cache_and_a_restart_applies_it_once) ... ok
+test_kill_between_superseding_and_the_new_intent_never_loses_the_carried_money (test_sgov_migration.SupersedeCrashTests.test_kill_between_superseding_and_the_new_intent_never_loses_the_carried_money) ... ok
+test_monitor_status_carries_the_sgov_target_without_amounts (test_sgov_tax.AlertTests.test_monitor_status_carries_the_sgov_target_without_amounts) ... ok
+test_distribution_cash_never_becomes_intraday_switch_money (test_sgov_tax.DistributionCashTests.test_distribution_cash_never_becomes_intraday_switch_money) ... ok
+test_distribution_is_booked_once_apart_from_gains_with_reported_figures (test_sgov_tax.DistributionLedgerTests.test_distribution_is_booked_once_apart_from_gains_with_reported_figures) ... <project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+ok
+test_sgov_holdings_never_count_as_a_cash_reserve (test_sgov_tax.SgovTaxSellTests.test_sgov_holdings_never_count_as_a_cash_reserve) ... ok
+test_sgov_tax_sell_stays_within_the_installment_gap_plus_one_share (test_sgov_tax.SgovTaxSellTests.test_sgov_tax_sell_stays_within_the_installment_gap_plus_one_share) ... ok
+test_without_a_cap_or_with_ledger_problems_only_a_plan_is_recorded (test_sgov_tax.SgovTaxSellTests.test_without_a_cap_or_with_ledger_problems_only_a_plan_is_recorded) ... ok
+test_broker_realized_pl_is_a_gross_anomaly_check_only (test_tax.EstimateTests.test_broker_realized_pl_is_a_gross_anomaly_check_only) ... ok
+test_dividends_are_reported_apart_from_capital_gains (test_tax.EstimateTests.test_dividends_are_reported_apart_from_capital_gains) ... ok
+test_one_deduction_over_account_and_other_brokers_and_rounding (test_tax.EstimateTests.test_one_deduction_over_account_and_other_brokers_and_rounding) ... ok
+test_duplicate_same_fill_ignored_conflicting_duplicate_blocks_tax_sells (test_tax.FifoTests.test_duplicate_same_fill_ignored_conflicting_duplicate_blocks_tax_sells) ... ok
+test_fifo_partial_sale_with_fees_and_settlement_fx (test_tax.FifoTests.test_fifo_partial_sale_with_fees_and_settlement_fx) ... ok
+test_pre_ledger_holdings_sold_are_cost_incomplete_and_unexplained (test_tax.FifoTests.test_pre_ledger_holdings_sold_are_cost_incomplete_and_unexplained) ... ok
+test_tax_ledger_problems_never_block_strategy_switch (test_tax.FifoTests.test_tax_ledger_problems_never_block_strategy_switch) ... ok
+test_unit_error_missing_fx_and_missing_fee_are_incomplete (test_tax.FifoTests.test_unit_error_missing_fx_and_missing_fee_are_incomplete) ... ok
+test_year_follows_settlement_date_across_new_year (test_tax.FifoTests.test_year_follows_settlement_date_across_new_year) ... <project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+ok
+test_sync_records_completed_fills_fees_dividends_and_rates_idempotently (test_tax.SyncTests.test_sync_records_completed_fills_fees_dividends_and_rates_idempotently) ... <project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+<project>\.venv\Lib\site-packages\exchange_calendars\utils\pandas_utils.py:60: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+  delta = pd.Timedelta(
+ok
+test_amounts_are_allowed_only_in_tax_messages_and_free_text_stays_masked (test_tax.TaxNoticeTests.test_amounts_are_allowed_only_in_tax_messages_and_free_text_stays_masked) ... ok
+test_december_estimate_and_january_recalculation_once_each (test_tax.TaxNoticeTests.test_december_estimate_and_january_recalculation_once_each) ... ok
+test_a_failing_handler_consumes_the_update_and_changes_nothing (test_tax.TelegramTests.test_a_failing_handler_consumes_the_update_and_changes_nothing) ... ok
+test_others_are_ignored_and_redelivery_is_processed_once (test_tax.TelegramTests.test_others_are_ignored_and_redelivery_is_processed_once) ... ok
+test_tax_reply_shows_tax_amounts_but_no_ids_or_secrets (test_tax.TelegramTests.test_tax_reply_shows_tax_amounts_but_no_ids_or_secrets) ... ok
+test_unreachable_telegram_does_not_raise (test_tax.TelegramTests.test_unreachable_telegram_does_not_raise) ... ok
+test_cumulative_target_and_no_pull_forward_from_a_large_deposit (test_tax_reserve.InstallmentTests.test_cumulative_target_and_no_pull_forward_from_a_large_deposit) ... ok
+test_early_securing_only_when_chosen (test_tax_reserve.InstallmentTests.test_early_securing_only_when_chosen) ... ok
+test_external_funds_and_overdue_plans_recalculate_remaining_installments (test_tax_reserve.InstallmentTests.test_external_funds_and_overdue_plans_recalculate_remaining_installments) ... ok
+test_missing_external_input_counts_as_zero (test_tax_reserve.InstallmentTests.test_missing_external_input_counts_as_zero) ... ok
+test_reserves_are_neither_converted_nor_bought_with (test_tax_reserve.ReinvestmentTests.test_reserves_are_neither_converted_nor_bought_with) ... ok
+test_usd_reserve_is_not_krw_ready (test_tax_reserve.ReinvestmentTests.test_usd_reserve_is_not_krw_ready) ... ok
+test_reverse_fx_request_matches_the_spec (test_tax_reserve.ReverseFxContractTests.test_reverse_fx_request_matches_the_spec) ... skipped 'official portal export not present; see README'
+test_unverified_reverse_fx_keeps_dollars_reserved_and_flags_the_need (test_tax_reserve.ReverseFxTests.test_unverified_reverse_fx_keeps_dollars_reserved_and_flags_the_need) ... ok
+test_verified_reverse_fx_lost_reply_is_recovered_and_applied_once (test_tax_reserve.ReverseFxTests.test_verified_reverse_fx_lost_reply_is_recovered_and_applied_once) ... ok
+test_deposit_is_secured_first_and_nothing_is_sold_in_the_same_run (test_tax_reserve.TaxSellGuardTests.test_deposit_is_secured_first_and_nothing_is_sold_in_the_same_run) ... ok
+test_in_progress_sell_is_reserved_and_never_repeated_across_restarts (test_tax_reserve.TaxSellGuardTests.test_in_progress_sell_is_reserved_and_never_repeated_across_restarts) ... ok
+test_ledger_problems_block_tax_sells_only (test_tax_reserve.TaxSellGuardTests.test_ledger_problems_block_tax_sells_only) ... ok
+test_no_tax_sell_while_a_switch_is_still_open (test_tax_reserve.TaxSellGuardTests.test_no_tax_sell_while_a_switch_is_still_open) ... ok
+test_round_limit_blocks_when_one_share_is_worth_more_than_the_gap_allows (test_tax_reserve.TaxSellGuardTests.test_round_limit_blocks_when_one_share_is_worth_more_than_the_gap_allows) ... ok
+test_sell_is_limited_to_the_installment_gap_plus_at_most_one_share (test_tax_reserve.TaxSellGuardTests.test_sell_is_limited_to_the_installment_gap_plus_at_most_one_share) ... ok
+test_switch_proceeds_are_earmarked_instead_of_a_separate_tax_sell (test_tax_reserve.TaxSellGuardTests.test_switch_proceeds_are_earmarked_instead_of_a_separate_tax_sell) ... ok
+test_without_a_cap_only_a_plan_is_recorded_and_strategy_keeps_working (test_tax_reserve.TaxSellGuardTests.test_without_a_cap_only_a_plan_is_recorded_and_strategy_keeps_working) ... ok
+test_yearly_cap_is_enforced_and_survives_restart (test_tax_reserve.TaxSellGuardTests.test_yearly_cap_is_enforced_and_survives_restart) ... ok
+test_bad_input_changes_nothing_and_is_not_echoed (test_tax_reserve.TelegramPlanCommandTests.test_bad_input_changes_nothing_and_is_not_echoed) ... ok
+test_cap_command_keeps_history_and_tax_reply_shows_plan (test_tax_reserve.TelegramPlanCommandTests.test_cap_command_keeps_history_and_tax_reply_shows_plan) ... ok
+test_plan_commands_apply_once_even_if_redelivered (test_tax_reserve.TelegramPlanCommandTests.test_plan_commands_apply_once_even_if_redelivered) ... ok
+test_partial_payment_redeposit_and_correction (test_tax_reserve.WithdrawalTests.test_partial_payment_redeposit_and_correction) ... ok
+test_registered_withdrawal_moves_once_and_unrelated_ones_are_not_tax (test_tax_reserve.WithdrawalTests.test_registered_withdrawal_moves_once_and_unrelated_ones_are_not_tax) ... ok
+test_release_only_by_explicit_user_command (test_tax_reserve.WithdrawalTests.test_release_only_by_explicit_user_command) ... ok
+test_a_missing_interpreter_is_refused_on_windows (test_windows_tasks.GeneratorTests.test_a_missing_interpreter_is_refused_on_windows) ... ok
+test_both_tasks_are_least_privilege_absolute_single_instance_without_secrets (test_windows_tasks.GeneratorTests.test_both_tasks_are_least_privilege_absolute_single_instance_without_secrets) ... ok
+test_generated_files_follow_the_schema_order (test_windows_tasks.GeneratorTests.test_generated_files_follow_the_schema_order) ... ok
+test_relative_paths_are_refused (test_windows_tasks.GeneratorTests.test_relative_paths_are_refused) ... ok
+test_the_schema_check_rejects_the_previous_order (test_windows_tasks.GeneratorTests.test_the_schema_check_rejects_the_previous_order) ... ok
+test_registration_is_read_from_schtasks_not_from_generated_files (test_windows_tasks.WindowsStatusTests.test_registration_is_read_from_schtasks_not_from_generated_files) ... ok
+test_two_registered_tasks_are_flagged (test_windows_tasks.WindowsStatusTests.test_two_registered_tasks_are_flagged) ... ok
+
+----------------------------------------------------------------------
+Ran 495 tests in 112.820s
+
+OK (skipped=5)
+# exit code: 0

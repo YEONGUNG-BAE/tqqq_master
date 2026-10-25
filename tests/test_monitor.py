@@ -36,6 +36,7 @@ class Fixture(unittest.TestCase):
                                {"instances": [heartbeat.instance_id(self.journal)]}, SECRET,
                                [("telegram", primary), ("backup_webhook", self.backup.append)],
                                schedule_factory=Schedule, sleep=lambda s: None)
+        self.addCleanup(self.monitor.db.close)
 
     def status(self, now, **meta):
         for key, value in meta.items():

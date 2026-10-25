@@ -81,11 +81,12 @@ def main(argv=None):
     windows_paths = os.name == "nt" or args.python
     python = args.python or str(root / ".venv" / "Scripts" / "python.exe")
     config = args.config or str(root / "config.json")
-    if os.name == "nt" and not Path(python).exists():
-        raise SystemExit("Create .venv and install requirements first (.venv\\Scripts\\python.exe not found)")
+    # Absolute first: a relative path is refused for what it is, wherever it points.
     for value in (python, config):
         if not (PureWindowsPath(value).is_absolute() or Path(value).is_absolute()):
             raise SystemExit("Python and config paths must be absolute")
+    if os.name == "nt" and not Path(python).exists():
+        raise SystemExit("Create .venv and install requirements first (.venv\\Scripts\\python.exe not found)")
     if "onedrive" in str(root).lower():
         print("WARNING: the project is under OneDrive; keep the state DB and token in a local, non-synced folder",
               file=sys.stderr)

@@ -76,13 +76,33 @@ class GeneratorTests(unittest.TestCase):
         self.assertTrue(schema_errors(ET.fromstring("<Exec><Arguments>x</Arguments></Exec>")))
 
     def generate(self, root, env=None):
-        python = r"C:\Users\아버지\tqqq auto\.venv\Scripts\python.exe"
-        config = r"C:\Users\아버지\tqqq auto\config.json"
-        out = subprocess.run([sys.executable, str(ROOT / "install_windows_task.py"), "--root", str(root),
-                              "--python", python, "--config", config, "--user", r"DESKTOP\아버지"],
-                             capture_output=True, text=True, timeout=30, env=dict(os.environ, **(env or {})))
+        # An installation folder with Korean text and spaces. The interpreter file
+        # must exist: on Windows the generator refuses a missing one. It is only a
+        # placeholder; the generator never runs it.
+        install = Path(root) / "아버지 설치" / "tqqq auto"
+        python = install / ".venv" / "Scripts" / "python.exe"
+        python.parent.mkdir(parents=True)
+        python.write_bytes(b"")
+        python, config = str(python), str(install / "config.json")
+        out = self.run_generator(root, python, config, env)
         self.assertEqual(out.returncode, 0, out.stderr)
         return python, config
+
+    def run_generator(self, root, python, config, env=None):
+        return subprocess.run([sys.executable, str(ROOT / "install_windows_task.py"), "--root", str(root),
+                               "--python", python, "--config", config, "--user", r"DESKTOP\아버지"],
+                              capture_output=True, text=True, timeout=30, env=dict(os.environ, **(env or {})))
+
+    def test_a_missing_interpreter_is_refused_on_windows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = str(Path(tmp) / "없는 설치" / ".venv" / "Scripts" / "python.exe")
+            out = self.run_generator(tmp, missing, str(Path(tmp) / "config.json"))
+            if os.name == "nt":
+                self.assertNotEqual(out.returncode, 0)
+                self.assertIn("python.exe not found", out.stderr)
+                self.assertFalse(list(Path(tmp).glob("tqqq-task-*.xml")))
+            else:                                    # review copy on another OS: no existence check
+                self.assertEqual(out.returncode, 0, out.stderr)
 
     def test_both_tasks_are_least_privilege_absolute_single_instance_without_secrets(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -116,6 +136,7 @@ class GeneratorTests(unittest.TestCase):
                                  capture_output=True, text=True, timeout=30)
             self.assertNotEqual(out.returncode, 0)
             self.assertIn("absolute", out.stderr)
+            self.assertFalse(list(Path(tmp).glob("tqqq-task-*.xml")))
 
 
 class WindowsStatusTests(unittest.TestCase):

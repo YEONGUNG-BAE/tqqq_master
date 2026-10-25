@@ -390,9 +390,13 @@ def run_locked(cfg, state, settings):
         journal = Journal(state / "journal.sqlite")
     except JournalError as exc:
         return journal_unusable(marker, cfg, now, str(exc))
-    remember_alias(journal, cfg)
-    notifier = Notifier(journal, enabled=cfg.get("notifications", True))
-    notifier.retry_pending(now)   # failed one-time messages are not lost if the event never repeats
+    try:
+        remember_alias(journal, cfg)
+        notifier = Notifier(journal, enabled=cfg.get("notifications", True))
+        notifier.retry_pending(now)   # failed one-time messages are not lost if the event never repeats
+    except BaseException:
+        journal.db.close()
+        raise
     broker = schedule = None
     outcome = "error"
     last_message = None
@@ -515,20 +519,22 @@ def run_locked(cfg, state, settings):
         return 1
     finally:
         try:
-            # Switch progress and delay alerts: notifications only, never trading state.
-            progress.observe(journal, notifier, schedule or Schedule(now), now, last_message, mode=settings.mode,
-                             recovery_buffer_minutes=settings.recovery_close_buffer_minutes,
-                             alerts_cfg=cfg.get("alerts"), locked=bool(journal.meta("halt")))
-        except Exception as exc:
             try:
-                journal.event("progress_failed", {"error_type": type(exc).__name__}, now)
-            except Exception:
-                pass
-        housekeeping(journal, notifier, cfg, broker, schedule, now)
-        # Last, after trading and housekeeping: a monitor outage cannot delay anything.
-        heartbeat.publish(journal, now=datetime.now(timezone.utc), run_at=now, outcome=outcome,
-                          work_done=outcome == "ok")
-        journal.db.close()
+                # Switch progress and delay alerts: notifications only, never trading state.
+                progress.observe(journal, notifier, schedule or Schedule(now), now, last_message, mode=settings.mode,
+                                 recovery_buffer_minutes=settings.recovery_close_buffer_minutes,
+                                 alerts_cfg=cfg.get("alerts"), locked=bool(journal.meta("halt")))
+            except Exception as exc:
+                try:
+                    journal.event("progress_failed", {"error_type": type(exc).__name__}, now)
+                except Exception:
+                    pass
+            housekeeping(journal, notifier, cfg, broker, schedule, now)
+            # Last, after trading and housekeeping: a monitor outage cannot delay anything.
+            heartbeat.publish(journal, now=datetime.now(timezone.utc), run_at=now, outcome=outcome,
+                              work_done=outcome == "ok")
+        finally:
+            journal.db.close()
 
 
 LIVE_CHECK_POLL_SECONDS = 5
@@ -756,19 +762,22 @@ def demo(args):
     path.mkdir(parents=True, mode=0o700)
     broker = Paper(krw="10000000")
     journal = Journal(path / "journal.sqlite")
-    engine = Engine(broker, journal, Settings(mode="paper"))
-    now = datetime(2026, 10, 15, 13, 31, tzinfo=timezone.utc)
-    rows = []
-    for i in range(7):
-        result = engine.tick(target="TQQQ", signal_date="2026-10-14", expected_signal_date="2026-10-14",
-                             session="2026-10-15", now=now + timedelta(seconds=10*i),
-                             may_exchange=i == 0, may_trade=True)
-        rows.append({"step": i + 1, "result": result})
-        for number, order in list(broker.orders.items()):
-            if order["state"] == "open":
-                broker.fill(number)
-    report = {"network_used": False, "real_orders_sent": False, "steps": rows,
-              "final": vars(broker.snapshot()), "actions": journal.rows()}
+    try:
+        engine = Engine(broker, journal, Settings(mode="paper"))
+        now = datetime(2026, 10, 15, 13, 31, tzinfo=timezone.utc)
+        rows = []
+        for i in range(7):
+            result = engine.tick(target="TQQQ", signal_date="2026-10-14", expected_signal_date="2026-10-14",
+                                 session="2026-10-15", now=now + timedelta(seconds=10*i),
+                                 may_exchange=i == 0, may_trade=True)
+            rows.append({"step": i + 1, "result": result})
+            for number, order in list(broker.orders.items()):
+                if order["state"] == "open":
+                    broker.fill(number)
+        report = {"network_used": False, "real_orders_sent": False, "steps": rows,
+                  "final": vars(broker.snapshot()), "actions": journal.rows()}
+    finally:
+        journal.db.close()
     (path / "demo.json").write_text(json.dumps(report, ensure_ascii=False, default=str, indent=2), encoding="utf-8")
     output(report)
     return 0
@@ -777,17 +786,20 @@ def demo(args):
 def local_status(args):
     cfg, state, _ = load_config(args.config)
     journal = Journal(state / "journal.sqlite")
-    output({"health": journal.meta("health"), "signal": journal.meta("signal"),
-            "halt": journal.meta("halt"), "lock": journal.meta("lock_info"), "hold": journal.meta("active_hold"),
-            "failures": journal.meta("failures"), "auth_failures": journal.meta("auth_failures"),
-            "monitor": {"instance": heartbeat.instance_id(journal), "last_send": journal.meta("monitor_last_send")},
-            "pending": [{k: r[k] for k in ("id", "kind", "status", "created", "session", "filled", "attempt")}
-                        for r in journal.pending()],
-            "live_check": livecheck.blocking(journal, account_marker_path(cfg)),
-            "switch_progress": {k: v for k, v in progress.summary(journal).items() if k != "fingerprint"},
-            "issues": ops.issues_lines(journal.db, datetime.now(timezone.utc),
-                                       monitor_configured=bool(os.environ.get("MONITOR_URL"))),
-            "books": books.diagnose(journal, datetime.now(timezone.utc))})
+    try:
+        output({"health": journal.meta("health"), "signal": journal.meta("signal"),
+                "halt": journal.meta("halt"), "lock": journal.meta("lock_info"), "hold": journal.meta("active_hold"),
+                "failures": journal.meta("failures"), "auth_failures": journal.meta("auth_failures"),
+                "monitor": {"instance": heartbeat.instance_id(journal), "last_send": journal.meta("monitor_last_send")},
+                "pending": [{k: r[k] for k in ("id", "kind", "status", "created", "session", "filled", "attempt")}
+                            for r in journal.pending()],
+                "live_check": livecheck.blocking(journal, account_marker_path(cfg)),
+                "switch_progress": {k: v for k, v in progress.summary(journal).items() if k != "fingerprint"},
+                "issues": ops.issues_lines(journal.db, datetime.now(timezone.utc),
+                                           monitor_configured=bool(os.environ.get("MONITOR_URL"))),
+                "books": books.diagnose(journal, datetime.now(timezone.utc))})
+    finally:
+        journal.db.close()
     return 0
 
 
@@ -796,18 +808,21 @@ def resolve(args):
     with open(state / "run.lock", "a", encoding="utf-8") as lock:
         oslock.acquire(lock)
         journal = Journal(state / "journal.sqlite")
-        action = journal.db.execute("SELECT * FROM actions WHERE id=?", (args.action,)).fetchone()
-        if not action or action["status"] not in {"unknown", "submitting", "accepted", "partial", "cancelling",
-                                                  "rejected", "done"}:
-            raise Stop("Action not found or unsupported state")
-        journal.update(args.action, "operator_resolved", result={"note": args.note, "outcome": args.outcome})
-        info = journal.meta("lock_info") or {}
-        if not journal.pending() and info.get("action") in (None, args.action):
-            journal.put_meta("halt", None)
-            journal.put_meta("lock_info", None)
-        journal.event("operator_resolution", {"action": args.action, "note": args.note, "outcome": args.outcome}, datetime.now(timezone.utc))
-        output({"resolved": args.action, "account_reconciliation_required_before_this_command": True,
-                "still_locked": bool(journal.meta("halt"))})
+        try:
+            action = journal.db.execute("SELECT * FROM actions WHERE id=?", (args.action,)).fetchone()
+            if not action or action["status"] not in {"unknown", "submitting", "accepted", "partial", "cancelling",
+                                                      "rejected", "done"}:
+                raise Stop("Action not found or unsupported state")
+            journal.update(args.action, "operator_resolved", result={"note": args.note, "outcome": args.outcome})
+            info = journal.meta("lock_info") or {}
+            if not journal.pending() and info.get("action") in (None, args.action):
+                journal.put_meta("halt", None)
+                journal.put_meta("lock_info", None)
+            journal.event("operator_resolution", {"action": args.action, "note": args.note, "outcome": args.outcome}, datetime.now(timezone.utc))
+            output({"resolved": args.action, "account_reconciliation_required_before_this_command": True,
+                    "still_locked": bool(journal.meta("halt"))})
+        finally:
+            journal.db.close()
     return 0
 
 

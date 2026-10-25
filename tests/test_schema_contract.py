@@ -10,7 +10,7 @@ from autotrader.meritz import Meritz
 
 ROOT = Path(__file__).resolve().parent.parent
 SPEC = ROOT/"vendor/meritz-portal-20261015.json"   # not redistributed; download per README
-DOC = json.loads(SPEC.read_text()) if SPEC.exists() else {"groups": []}
+DOC = json.loads(SPEC.read_text(encoding="utf-8")) if SPEC.exists() else {"groups": []}
 APIS = {(a["method"], a["url"]): a for group in DOC["groups"] for a in group["apis"]}
 
 

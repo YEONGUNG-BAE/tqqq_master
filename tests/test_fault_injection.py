@@ -598,6 +598,10 @@ class LiveFake(FakeMeritz):
 class AuthAndTokenTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        # A cleanup, not tearDown: cleanups run after tearDown in reverse order, so
+        # the journals a test registers are closed before this folder is removed
+        # (Windows cannot delete an open SQLite file).
+        self.addCleanup(self.tmp.cleanup)
         self.state = Path(self.tmp.name)
         self.env = patch.dict(os.environ, SECRET_ENV)
         self.env.start()
@@ -607,7 +611,6 @@ class AuthAndTokenTests(unittest.TestCase):
     def tearDown(self):
         self.net.stop()
         self.env.stop()
-        self.tmp.cleanup()
 
     def test_lost_order_reply_then_token_expiry_recovers_without_resend(self):
         today = datetime.now(KST).strftime("%Y%m%d")       # adapter's order_status uses the real KST date

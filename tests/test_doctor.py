@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # The official portal export is not redistributed with this repository (see
 # README). When present locally, every fake request is checked against it.
 SPEC = ROOT / "vendor/meritz-portal-20261015.json"
-DOC = json.loads(SPEC.read_text()) if SPEC.exists() else {"groups": []}
+DOC = json.loads(SPEC.read_text(encoding="utf-8")) if SPEC.exists() else {"groups": []}
 APIS = {(a["method"], a["url"]): a for g in DOC["groups"] for a in g["apis"]}
 KRW_MORNING = datetime(2026, 10, 15, 1, 0, tzinfo=timezone.utc)   # 10:00 KST, US closed
 US_OPEN = datetime(2026, 10, 15, 13, 31, 10, tzinfo=timezone.utc)  # 1 minute after open
@@ -329,10 +329,10 @@ class DoctorTests(Harness):
         saved = root / "state_live/doctor/latest.json"
         if os.name != "nt":                      # Windows: ACLs, checked by oslock.acl_report
             self.assertEqual(saved.stat().st_mode & 0o777, 0o600)
-        text = out.getvalue() + saved.read_text()
+        text = out.getvalue() + saved.read_text(encoding="utf-8")
         for secret in list(SECRET_ENV.values()) + [TOKEN]:
             self.assertNotIn(secret, text)
-        report = json.loads(saved.read_text())
+        report = json.loads(saved.read_text(encoding="utf-8"))
         self.assertEqual(report["mode"], "live")
         self.assertIn("verification_incomplete", self.codes(report))
         # Doctor never records an execution mode, so the state is not claimed by an Engine.

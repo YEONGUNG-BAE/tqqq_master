@@ -1,5 +1,23 @@
 # 진행 상황
 
+## 실제 Windows 전체 테스트 실패 27건 수정 (2026-10-25, 기준 88a9525, Windows 11 네이티브)
+
+처음으로 Windows PC(Python 3.14.5, 기본 코드 페이지 CP949, `PYTHONUTF8` 미설정)에서 전체 테스트를 돌렸다. 490개 중 실패 3, 오류 24, 건너뜀 5였다(사용자 로그 `windows-tests.log`, UTF-16). 네 묶음 모두 로그와 단독 재실행으로 재현한 뒤 고쳤다.
+
+| # | 원인 | 수정 |
+|---|---|---|
+| A (오류 20) | Windows는 열린 SQLite 파일을 지우지 못한다. ① `tearDown`의 임시 폴더 삭제가 `addCleanup`의 DB 닫기보다 먼저 실행됨(`test_fault_injection`·`test_market_reservations`) ② 테스트가 `Monitor` 연결을 닫지 않음(`test_monitor`·`test_operations`) ③ `status`(`local_status`)가 Journal을 닫지 않음(`test_portability.PathTests`) | 임시 폴더 삭제를 가장 먼저 등록한 cleanup으로 옮겨 DB 닫기 뒤에 실행. Monitor 연결은 cleanup으로 닫음. 프로그램: `local_status`·`resolve`·`demo`에 `try/finally`, `run_locked`는 거래 전 단계(별칭·알림 재전송)가 실패해도, 마무리(진척·정리·하트비트)가 실패해도 닫음. `Journal()` 열기가 실패하면 연 연결을 닫고 같은 예외를 냄 |
+| B (오류 3) | 테스트가 UTF-8 파일(`config.example.json`, 프로그램이 UTF-8로 쓰는 doctor `latest.json`)을 기본 CP949로 읽음 | 읽기에 `encoding="utf-8"`. 명세 파일을 받아 두면 같은 오류가 날 두 곳(`test_schema_contract`·`test_doctor`의 명세 읽기)도 함께 고침 |
+| C (오류 1) | macOS 분기를 검사하는 테스트가 플랫폼을 지정하지 않아 Windows 분기가 실행됨 | `platform="darwin"`을 명시하고, Windows에 없는 `os.getuid`만 테스트에서 대체. 실행 코드는 바꾸지 않음. Windows 분기는 `test_windows_tasks.WindowsStatusTests`가 계속 검사 |
+| D (실패 3) | 생성기 테스트의 가상 Python 경로가 Windows의 존재 검사에 걸림. 상대경로 거부 테스트도 존재 검사가 먼저 실행돼 절대경로 검사에 도달하지 못함 | 생성기는 절대경로 검사를 먼저 하고 존재 검사를 그 뒤에 함(둘 다 유지). 테스트는 임시 폴더 안 한글·공백 경로에 빈 자리표시 `python.exe`를 만들어 씀(생성기는 실행하지 않음). 없는 인터프리터를 Windows에서 거부하는지 확인하는 테스트를 추가 |
+
+- **추가 테스트 5개:** `test_portability.ConnectionCloseTests` 4개(`status` 정상·예외, `run_locked` 거래 전 실패, 열기 실패 시 연결 없음)와 위 생성기 테스트. 수정 전 프로그램에 넣으면 4개 모두 실패한다(기존 PathTests 포함 오류 6, 실패 3).
+- **전체 테스트(Windows, CP949):** 495개, 통과, 건너뜀 5, 종료 코드 0(`VALIDATION_WINDOWS.txt`). 건너뜀은 POSIX 권한 비트 1, Windows의 TZ 변수 의미 차이 1, 공식 명세 미보관 3이며 이전과 같다. 새로 건너뛰게 한 테스트는 없다.
+- **같은 코드의 직전 전체 실행 1회는 오류 1건:** `ProcessLockTests.test_a_lock_held_by_another_process_refuses_and_its_death_releases_it`. 강제 종료한 프로세스의 `msvcrt` 잠금을 Windows가 `wait()` 반환 뒤 비동기로 푼다(LockFileEx 문서: 해제 시간은 시스템 자원에 따름). 측정: 유휴 0/30 실패, 12코어 부하 15/30 실패, 해제 지연 7~34ms. 보호 동작(보유 중 거부, 종료 후 해제)은 그대로다. 실제 `run`은 잠금이 바쁘면 아무 요청 없이 끝나고 다음 1분 실행이 진행한다. 이번 범위 밖이라 테스트를 고치지 않았다. 고친다면 정해진 시간 안에 해제되는지 반복 확인하는 방식이 맞다.
+- **리플레이 비교:** 88a9525와 수정본으로 `self_irregular`·`father_monthly`·`child_lump_sum`·`demo`를 새 임시 상태에서 돌렸다. 출력과 DB 전체 행이 UUID·실행 시각을 빼고 같았다. `self_irregular`를 3세션씩 15번 끊어 재시작한 결과도 88a9525의 한 번 실행과 같았다.
+- 삭제 오류 무시, 반복 삭제, sleep, 강제 GC, `PYTHONUTF8=1`은 쓰지 않았다. 전략·주문·환전·세금·재시도 정책, 계좌 결속, 잠금, live-check 소유권 표시, 전송 전 검사는 바꾸지 않았다.
+- **아직 Windows에서 확인하지 않은 것:** 실제 `icacls /save` 출력과 ACL 판정, 작업 스케줄러 등록·실행·해제, 재부팅·로그인 뒤 자동 실행, 두 명령 프롬프트에서 동시 `run`, 절전 해제 뒤 첫 실행의 주문 대조, 실계좌 `doctor`.
+
 ## Windows 후보 검토 반영 4건 (2026-10-25, 기준 64c1b58)
 
 | # | 문제 | 수정 | 커밋 |
